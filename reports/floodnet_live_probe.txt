@@ -1,0 +1,37 @@
+FloodNet live-data check, 2026-11-15 16:40 UTC
+
+1. NYC Open Data FloodNet events (aq7i-eu5q)
+   could not reach https://data.cityofnewyork.us/resource/aq7i-eu5q.json - ConnectionError
+   could not reach https://data.cityofnewyork.us/api/views/aq7i-eu5q.json - ConnectionError
+
+2. Live dashboard (dataviz.floodnet.nyc): looking for its data addresses
+   could not reach https://dataviz.floodnet.nyc/ - ConnectionError
+   https://www.floodnet.nyc/: HTTP 200, 1808392 bytes
+   could not reach https://static.parastorage.com/unpkg/core-js-bundle@3.2.1/minified.js - ConnectionError
+   could not reach https://static.parastorage.com/unpkg/focus-within-polyfill@5.0.9/dist/focus-within-polyfil - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/664.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/695.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/141.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/954.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/861.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/972.chunk.min - ConnectionError
+   could not reach https://static.parastorage.com/services/events-viewer/1.4404.0/client-viewer/ListLayout.ch - ConnectionError
+   could not reach https://static.parastorage.com/services/form-app/1.3356.0/client-viewer/9907.chunk.min.js - ConnectionError
+   could not reach https://static.parastorage.com/services/form-app/1.3356.0/client-viewer/form-app-dropdown. - ConnectionError
+   could not reach https://static.parastorage.com/services/form-app/1.3356.0/client-viewer/form-app-text-area - ConnectionError
+   could not reach https://static.parastorage.com/unpkg/react@18.3.1/umd/react.production.min.js - ConnectionError
+   could not reach https://static.parastorage.com/unpkg/react-dom@18.3.1/umd/react-dom.production.min.js - ConnectionError
+   could not reach https://floodnet.nyc/ - ConnectionError
+   found: https://browser.sentry-cdn.com/7.120.3/modulemetadata.es5.min.js
+   found: https://data.cityofnewyork.us/browse?Data-Collection_Data-Collection=FloodNet
+   found: https://dataviz.floodnet.nyc/
+   found: https://panorama.wixapps.net/api/v1/bulklog
+
+3. Trying data addresses
+   https://browser.sentry-cdn.com/7.120.3/modulemetadata.es5.min.js: HTTP 200, application/javascript, 3323 bytes
+   could not reach https://data.cityofnewyork.us/browse?Data-Collection_Data-Collection=FloodNet - ConnectionError
+   could not reach https://dataviz.floodnet.nyc/ - ConnectionError
+   https://panorama.wixapps.net/api/v1/bulklog: HTTP 404, , 0 bytes
+   could not reach https://api.dataviz.floodnet.nyc/ - ConnectionError
+   could not reach https://api.floodnet.nyc/ - ConnectionError
+   https://dataviz.floodnet.nyc/api/sensors: HTTP 200, text/html, 801 bytes

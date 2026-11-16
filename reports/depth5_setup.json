@@ -1,0 +1,10 @@
+{
+  "L_steps": 12,
+  "H_steps": 8,
+  "step_minutes": 5,
+  "split": {
+    "train_end": "2025-12-31 23:59",
+    "val_end": "2026-06-30 23:59"
+  },
+  "flood_threshold_in": 1.0
+}

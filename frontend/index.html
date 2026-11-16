@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Flood Watch</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/style.css">
+
+
+</head>
+<body class="live">
+<canvas id="sky" aria-hidden="true"></canvas>
+<nav class="rail" aria-label="Sections">
+  <svg class="logo" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 13c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/><path d="M6 20c4-4 8-4 12 0s8 4 12 0"/><path d="M6 27c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/></svg>
+  <a href="#top" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg><span>Overview</span></a>
+  <a href="#now" class="live-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16.5a4.5 4.5 0 1 1 1.3-8.8A6 6 0 0 1 19.5 10a3.5 3.5 0 0 1-.5 6.5"/><path d="M9 19l-1 2M13 19l-1 2M17 19l-1 2"/></svg><span>Weather now</span></a>
+  <a href="#prediction"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg><span>Flood map</span></a>
+  <a href="#today" class="live-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg><span>Today’s prediction</span></a>
+  <a href="#depth" class="past-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M3 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg><span>Depth forecast</span></a>
+  <a href="#weather" class="past-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 1.3-8.8A6 6 0 0 1 19.5 11.5 3.5 3.5 0 0 1 18 18z"/></svg><span>Weather</span></a>
+  <a href="#models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.6v.4"/></svg><span>How it works</span></a>
+  <a href="lab.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span>Model Lab</span></a>
+  <div class="grow"></div>
+</nav>
+
+<main id="app">
+  <div class="top">
+    <div class="place"><small>Flood watch for</small><b id="place-time">New York City</b></div>
+    <div class="right">
+      <div class="modes" role="group" aria-label="View"><button data-mode="live" aria-pressed="true"><span class="livedot"></span>Live</button><button data-mode="past" aria-pressed="false">Past storms</button></div>
+      <select id="storm" class="past-only" aria-label="Storm day"></select>
+    </div>
+  </div>
+
+  <section class="hero" id="top">
+    <div class="hero-main">
+      <span class="pill" id="hero-pill">Live flood forecast</span>
+      <h1 id="headline">Loading the storm…</h1>
+      <p class="lede" id="summary"></p>
+      <div class="hours" aria-label="Rain over the day">
+        <div class="hours-row" id="hours"></div>
+        <canvas id="wave" aria-hidden="true"></canvas>
+        <div class="hours-labels" id="hours-labels"></div>
+      </div>
+    </div>
+    <aside class="hero-side">
+      <div class="glass now-card" id="now-card"></div>
+      <div class="boro-cards" id="boro-cards"></div>
+    </aside>
+  </section>
+  <div class="facts" id="facts"></div>
+  <div class="banner live-only" id="live-banner" hidden></div>
+
+  <section id="now" class="live-only">
+    <h2>Weather now</h2>
+    <p class="lede" id="now-lede"></p>
+    <div class="wx" id="wx-now"></div>
+    <div class="grid2" style="margin-top:20px">
+      <div class="box"><h3>Rain forecast, next 24 hours (mm per hour)</h3><canvas class="chart" id="next24-chart"></canvas><p class="note">Bars: rain. Line: chance of rain (right scale, %). Averaged over the city.</p></div>
+      <div class="box"><h3>Rain every 15 minutes, last 2 hours and next 4</h3><canvas class="chart" id="q15-chart"></canvas>
+        <p class="note">Left of the dotted line has happened; right of it is forecast.</p>
+        <h3 style="margin-top:16px">Measured at the gauges (mm per hour)</h3><table id="gauge-table"></table></div>
+    </div>
+  </section>
+
+  <section id="prediction">
+    <h2>Flood map</h2>
+    <p class="lede" id="map-lede"></p>
+    <div class="mapwrap">
+      <div class="mapstage">
+        <canvas id="map" aria-label="Flood map. Drag to move. Hold Ctrl or Command and scroll, or use the plus and minus buttons, to zoom."></canvas>
+        <div class="hud">
+          <button id="b-start" aria-pressed="false">Set start</button>
+          <button id="b-end" aria-pressed="false">Set destination</button>
+          <button id="b-clear">Clear route</button>
+          <button id="b-rep" class="past-only" aria-pressed="false">Reported flooding</button>
+        </div>
+        <div class="zoom"><button id="z-in" aria-label="Zoom in">+</button><button id="z-out" aria-label="Zoom out">−</button><button id="z-fit" aria-label="Show the whole city">⌂</button></div>
+        <div class="legend">
+          <span><i style="background:var(--flood)"></i>High flood risk (street model)</span>
+          <span><i style="background:var(--warn)"></i>Medium risk</span>
+          <span><i style="background:var(--watch)"></i>Low risk</span>
+          <span><i style="background:var(--route)"></i>Your route</span>
+          <span><i class="dia" style="background:var(--flood)"></i>Sensor: 4 in or more forecast</span>
+          <span><i class="dia" style="background:var(--warn)"></i>Sensor: some water forecast</span>
+        </div>
+        <div class="timebar">
+          <button id="play" aria-label="Play the storm">▶</button>
+          <div class="track"><canvas id="tl" aria-hidden="true"></canvas><input type="range" id="time" min="0" max="287" step="any" value="0" aria-label="Time of day"></div>
+          <output id="clock">00:00</output>
+          <small id="clock-note"></small>
+        </div>
+        <div id="hint">Hold Ctrl (⌘ on Mac) and scroll to zoom the map</div>
+        <div id="tip"></div>
+      </div>
+      <aside class="side">
+        <h3>Route</h3>
+        <form id="route-form" class="search" autocomplete="off">
+          <label>From<input id="q-from" list="street-names" placeholder="e.g. Atlantic Ave &amp; Flatbush Ave"></label>
+          <label>To<input id="q-to" list="street-names" placeholder="e.g. Queens Blvd, Queens"></label>
+          <div class="search-actions"><button type="submit" class="go">Find safe route</button><button type="button" id="swap" aria-label="Swap from and to">⇅ Swap</button></div>
+          <datalist id="street-names"></datalist>
+        </form>
+        <p class="note" style="margin:6px 0 10px">Type a street, or two crossing streets joined with “&amp;”. Add “, Brooklyn” (or another borough) if the name is in several. You can also click the map with Set start / Set destination.</p>
+        <div class="routebox" id="route-info"></div>
+        <h3>Water at the flood sensors</h3>
+        <div class="seg-ahead" id="ahead-seg" role="group" aria-label="Looking ahead"><button data-a="5">In 5 min</button><button data-a="20">In 20 min</button><button data-a="40">In 40 min</button></div>
+        <select id="ahead" hidden><option value="5">5</option><option value="20" selected>20</option><option value="40">40</option></select>
+        <label class="past-only" style="display:grid; gap:4px; font-size:12.5px; color:var(--soft); margin-top:8px">Model<select id="model"></select></label>
+        <div class="sense-sum" id="sense-sum"></div>
+        <ol class="list" id="sensor-list"></ol>
+        <p class="note" id="sensor-note"></p>
+        <h3>Streets flagged by the street model</h3>
+        <div class="lvl" id="lvl"></div>
+        <p class="note" id="rep-note"></p>
+      </aside>
+    </div>
+    <p class="note"><b>What the map shows.</b> Street colours are the street model’s risk of a flooding report in this storm: high risk means a 1% or higher chance, about 25 times the average street. The model learned from 311 reports, which over-rank areas where people report more, so it is a risk ranking, not measured water. When each street lights up and clears is a display rule that follows rain at the nearest gauge, not a depth forecast. Only the diamonds carry the depth model: its forecast at each FloodNet sensor. Routes ignore one-way rules.</p>
+  </section>
+
+  <section id="depth" class="past-only">
+    <h2>Depth forecast</h2>
+    <p class="lede" id="depth-lede"></p>
+    <div id="depth-body">
+      <div class="controls">
+        <label>Sensor<select id="sensor"></select></label>
+        <div class="seg" id="h-seg" role="group" aria-label="Minutes ahead"></div>
+      </div>
+      <div class="grid2">
+        <div class="box">
+          <h3 id="depth-title">Depth</h3>
+          <canvas class="chart" id="depth-chart" style="height:300px"></canvas>
+          <div class="keys" id="depth-keys"></div><div class="plain" id="depth-say"></div>
+          <details class="models"><summary>Show more models</summary><div class="toggles" id="model-toggles"></div></details>
+        </div>
+        <div class="box"><h3>Error in this storm (inches)</h3><table id="storm-err"></table>
+          <p class="note">Typical error when there was water, across all sensors that day. Lower is better.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="weather" class="past-only">
+    <h2>Weather and rain</h2>
+    <p class="lede" id="wx-lede"></p>
+    <div class="grid2">
+      <div class="box"><h3>Rain every 5 minutes (mm)</h3><canvas class="chart" id="rain-chart"></canvas><p class="note" id="rain-note"></p></div>
+      <div class="box" id="wx-box"><h3>The day's weather</h3><table id="wx-table"></table></div>
+    </div>
+  </section>
+
+  <section id="today" class="live-only">
+    <h2>Today’s prediction</h2>
+    <p class="lede" id="today-lede"></p>
+    <div class="facts" id="today-facts"></div>
+    <div class="grid2" style="margin-top:24px">
+      <div class="box"><h3>What more rain would do to the city</h3>
+        <canvas class="chart" id="scen-chart" style="height:260px"></canvas>
+        <div class="keys"><span><i style="background:var(--flood)"></i>Streets at high risk</span><span><i style="background:var(--warn)"></i>Expected flooding reports</span><span>Dotted line: today’s forecast</span></div>
+        <p class="plain" id="scen-say"></p>
+        <p class="note" id="scen-note"></p></div>
+      <div class="box"><h3>Streets flagged by borough</h3><table id="t-boro"></table>
+        <h3 style="margin-top:22px">Flood sensors, 40 minutes ahead</h3><table id="t-sens"></table>
+        <p class="note" id="sens-say"></p></div>
+    </div>
+  </section>
+
+  <section id="models">
+    <h2>How it works, and how to read the results</h2>
+    <p class="lede">Every score on this page comes from storms the models never saw while learning (depth: July to October 2026). Here is how to use the page, what each model does, and what the numbers mean.</p>
+
+    <div class="guide">
+      <div><h3>Check the weather</h3><p>“Weather now” shows the rain falling and the forecast for the next 24 hours. Under 5 mm of rain forecast means no flooding is expected.</p></div>
+      <div><h3>Read the map colours</h3><p>Red, orange and yellow streets are high, medium and low flood risk from the street model. Diamonds are flood sensors with the depth model’s forecast.</p></div>
+      <div><h3>Move through time</h3><p>Press play or drag the slider under the map. Streets fill as rain builds and clear as it drains. Type a start and destination to get a route around high-risk streets.</p></div>
+      <div><h3>Check the sensors</h3><p>The side panel says how deep the water should be at each sensor 5, 20 or 40 minutes from now. In “Past storms” it also shows what really happened.</p></div>
+    </div>
+
+    <h3 style="font-size:19px; margin-bottom:14px">The models</h3>
+    <div class="models-grid">
+      <div class="box model-card">
+        <h3>ANN-LSTM</h3>
+        <p class="tagline">First guess the rain, then guess the water.</p>
+        <div class="flow">
+          <div class="st"><b>Last hour of rain</b><span>at the nearest gauge</span></div><span class="ar">→</span>
+          <div class="st nn"><b>ANN</b><span>forecasts the next 40 min of rain</span></div><span class="ar">→</span>
+          <div class="st nn"><b>LSTM</b><span>reads past depth + rain + forecast</span></div><span class="ar">→</span>
+          <div class="st out"><b>Depth</b><span>5 to 40 min ahead</span></div>
+        </div>
+        <p>The ANN is a small neural network: layers of simple maths units that learn how rain usually continues. The LSTM is a network with memory. It reads the readings in order, keeps what matters (water has been rising for 20 minutes) and forgets what does not.</p>
+      </div>
+      <div class="box model-card">
+        <h3>CNN-LSTM</h3>
+        <p class="tagline">Spot short patterns first, then follow them over time.</p>
+        <div class="flow">
+          <div class="st"><b>Last hour</b><span>depth and rain, every 5 min</span></div><span class="ar">→</span>
+          <div class="st nn"><b>CNN filters</b><span>slide over 15-min windows</span></div><span class="ar">→</span>
+          <div class="st nn"><b>LSTM</b><span>follows the patterns</span></div><span class="ar">→</span>
+          <div class="st out"><b>Depth</b><span>5 to 40 min ahead</span></div>
+        </div>
+        <p>Each filter looks at three readings at a time and lights up for one shape, like a sudden burst of rain or water starting to climb. The LSTM then works from those shapes instead of the raw numbers.</p>
+      </div>
+      <div class="box model-card">
+        <h3>XGBoost</h3>
+        <p class="tagline">Hundreds of small yes/no questions, added up.</p>
+        <div class="flow">
+          <div class="st"><b>Features</b><span>rain, drains, flood maps, past reports</span></div><span class="ar">→</span>
+          <div class="st nn"><b>Tree 1</b><span>“more than 10 mm?”</span></div><span class="ar">+</span>
+          <div class="st nn"><b>Tree 2</b><span>fixes tree 1’s mistakes</span></div><span class="ar">+ …</span>
+          <div class="st out"><b>Score</b><span>flood chance or depth</span></div>
+        </div>
+        <p>Each tree is a short chain of yes/no questions. Every new tree is trained on the errors of the ones before it, so the sum keeps getting better. XGBoost ranks which streets flood on the map, and is also used to forecast rain and depth.</p>
+      </div>
+      <div class="box model-card">
+        <h3>Recursive ANN-LSTM (the paper’s design)</h3>
+        <p class="tagline">Predict 5 minutes, feed it back in, repeat.</p>
+        <div class="flow">
+          <div class="st"><b>Last hour</b><span>+ next 5 min of forecast rain</span></div><span class="ar">→</span>
+          <div class="st nn"><b>LSTM</b><span>one step only</span></div><span class="ar">→</span>
+          <div class="st out"><b>Depth in 5 min</b><span>added to the window</span></div>
+          <div class="loop">↻ repeated 8 times to reach 40 minutes</div>
+        </div>
+        <p>Best of all models for the next 5 to 15 minutes. After that, each step builds on the last guess, small errors pile up, and the standard LSTM, which predicts all 40 minutes at once, does better.</p>
+      </div>
+    </div>
+    <p class="note">Persistence is the baseline: it assumes the water stays exactly as it is now. Any model worth using has to beat it.</p>
+
+    <h3 style="font-size:19px; margin:44px 0 6px">What R² means</h3>
+    <p class="lede" style="margin-bottom:18px">R² compares a model with the laziest possible guess: the average depth. It asks how much of the gap between that guess and the real water level the model closes.</p>
+    <div class="box r2">
+      <div>
+        <canvas id="r2-chart" aria-label="Measured water depth (dark line) and a forecast (blue line)"></canvas>
+        <div class="keys"><span><i style="background:var(--ink)"></i>Measured depth</span><span><i style="background:var(--rain)"></i>Forecast</span><span><i style="background:var(--soft)"></i>Average (R² = 0)</span></div>
+      </div>
+      <div>
+        <div class="score" id="r2-val">0.50</div>
+        <p class="verdict" id="r2-say"></p>
+        <label for="r2-q" style="font-size:13px; color:var(--soft)">Try it: change how good the forecast is</label>
+        <input type="range" id="r2-q" min="-30" max="100" value="35">
+        <div class="ends"><span>Worse than average</span><span>Perfect</span></div>
+        <p class="note">R² = 1 − (forecast’s squared errors ÷ the average’s squared errors).</p>
+      </div>
+      <div class="scale" style="grid-column:1/-1">
+        <div><b>1.0</b>perfect forecast</div>
+        <div><b>0.9</b>very close (5 minutes ahead)</div>
+        <div><b>0.5</b>gets the shape, misses the size (20 minutes)</div>
+        <div><b>0 or less</b>no better than the average (40 minutes)</div>
+      </div>
+    </div>
+    <div class="terms">
+      <div><h3>RMSE (inches)</h3><p>The typical size of a miss. An RMSE of 0.65 in means forecasts are usually within about two-thirds of an inch. Lower is better.</p></div>
+      <div><h3>Caught early, and false alarms</h3><p>Of the floods that happened, the share the model warned about while the street was still dry. On its own it flatters a model that warns all the time, so it is always read with the false-alarm share: how many warnings did not come true.</p></div>
+      <div><h3>Top 1% / top 5%</h3><p>For streets: if you check only the riskiest 1% of streets, what share of the streets that really flooded have you found? 22% from 1% of streets is 22 times better than picking at random.</p></div>
+    </div>
+
+    <h3 style="font-size:19px; margin:44px 0 6px">How accurate the models are</h3>
+    <p class="lede" style="margin-bottom:18px">These scores were measured once, on storms from July to October 2026 that the models never saw, by comparing their forecasts with what the sensors really recorded. They describe how far to trust the models, so they do not change with today’s weather. Today’s numbers are in <a href="#today">Today’s prediction</a>.</p>
+    <div class="grid2">
+      <div class="box"><h3>Flood depth at the sensors</h3><table id="t-depth"></table>
+        <p class="note">Green is the best realistic model. “Perfect rain” rows were given the rain that really fell next, so they show the ceiling, not a real forecast. Read across a row: every model gets worse the further ahead it looks.</p>
+        <h3 style="margin-top:22px">One step at a time vs all at once</h3><table id="t-rec"></table>
+        <p class="note">R² on the same test storms. The recursive models win at 5 minutes and lose by 40.</p>
+        <h3 style="margin-top:22px">Warnings, counted honestly</h3>
+        <table><tr><th>Model</th><th class="n">Floods caught</th><th class="n">False alarms</th><th class="n">Lead</th></tr>
+          <tr><td>Warn if any water now</td><td class="n">32%</td><td class="n">79%</td><td class="n">12 min</td></tr>
+          <tr><td>LSTM</td><td class="n">29%</td><td class="n">80%</td><td class="n">10 min</td></tr>
+          <tr><td>CNN-LSTM</td><td class="n">29%</td><td class="n">82%</td><td class="n">15 min</td></tr>
+          <tr><td>Bucket model + ANN rain</td><td class="n">41%</td><td class="n">92%</td><td class="n">15 min</td></tr>
+          <tr><td>LSTM + perfect rain (upper bound)</td><td class="n">36%</td><td class="n">78%</td><td class="n">15 min</td></tr></table>
+        <p class="note">“Will a street under 1 inch now pass 1 inch within 40 minutes?” 1,066 test floods. The alarm level was tuned on half the storms and scored on the other half. False alarms are the share of warnings that did not come true.</p></div>
+      <div class="box"><h3>What the results say</h3>
+        <ul class="note" style="padding-left:18px; margin:0; font-size:14px">
+          <li>Water depth 5 minutes ahead is predicted well (R² 0.94). By 20 minutes the models get the shape of a flood but not its size.</li>
+          <li>The standard LSTM has the lowest error of the neural models, and the gap to ANN-LSTM and CNN-LSTM is statistically significant (p ≤ 0.01).</li>
+          <li>A simple physical “bucket” model with three numbers is just as accurate as the LSTM (no significant difference, p = 0.56).</li>
+          <li>Measured honestly, warnings catch about a third of floods 10–15 minutes ahead, with about four false alarms per real flood.</li>
+          <li>The rain forecast is the bottleneck, not the distance to the rain gauge: the forecast helped neither near nor far sensors.</li>
+        </ul>
+        <h3 style="margin-top:22px">Which streets flood</h3><table id="t-road"></table>
+        <p class="note">Share of flooded streets found among the riskiest 1% and 5% of streets (January to July 2026).</p></div>
+    </div>
+  </section>
+
+  <footer>Student research prototype. Not an official warning service. Live weather and forecasts: Open-Meteo. Depth: FloodNet NYC. Rain: NOAA airport gauges via Iowa Environmental Mesonet, and Open-Meteo. Streets, drains, flood maps and 311 reports: NYC Open Data.</footer>
+</main>
+
+<script src="js/sky.js" defer></script>
+<script src="js/app.js" defer></script>
+<script src="js/ui.js" defer></script>
+</body>
+</html>

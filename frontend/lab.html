@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Lab · NYC Flood Watch</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/lab.css">
+</head>
+<body class="live lab">
+<canvas id="sky" aria-hidden="true"></canvas>
+<nav class="rail" aria-label="Pages">
+  <svg class="logo" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 13c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/><path d="M6 20c4-4 8-4 12 0s8 4 12 0"/><path d="M6 27c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/></svg>
+  <a href="index.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg><span>Flood Watch</span></a>
+  <a href="index.html#prediction"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg><span>Flood map</span></a>
+  <a href="lab.html" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span>Model Lab</span></a>
+  <div class="grow"></div>
+</nav>
+
+<main id="app">
+  <div class="top">
+    <div class="place"><small>NYC Flood Watch</small><b>Model Lab</b></div>
+  </div>
+
+  <section class="lab-hero">
+    <span class="pill">ANN-LSTM and CNN-LSTM, run on your data</span>
+    <h1>Put in the readings, see the forecast</h1>
+    <p class="lede">Give the models water depth and rain every 5 minutes at one place. For every reading after the first hour they forecast the depth 5 to 40 minutes ahead, and you can compare that with what really happened.</p>
+  </section>
+
+  <section class="lab-grid">
+    <div class="box">
+      <h3>1. Your data</h3>
+      <label class="field">Try a real storm from the test period
+        <select id="sample"><option value="">Choose a storm…</option></select></label>
+      <div class="or">or</div>
+      <label class="upload" id="drop"><input type="file" id="file" accept=".csv,.txt,text/csv,text/plain"><span id="file-label">Upload a CSV file, or drop it here</span></label>
+      <label class="field" id="pick-wrap" hidden><span id="pick-head"></span><select id="pick"></select></label>
+      <label class="field">or paste it here
+        <textarea id="csv" rows="9" spellcheck="false" placeholder="time_utc,rain_mm,depth_in&#10;2026-07-18 15:00,0,0&#10;2026-07-18 15:05,1.2,0&#10;…"></textarea></label>
+      <p class="note">Any of the training files (1, 2 or 3) works too: the page splits them into storms for you. Otherwise three columns, one row every 5 minutes: <b>time_utc</b> (year-month-day hour:minute, in UTC), <b>rain_mm</b> (rain in that 5 minutes; leave empty if unknown) and <b>depth_in</b> (water depth in inches; 0 when dry). At least 13 rows: the models need one hour of history.</p>
+      <p class="note"><a href="#" id="template">Download an empty template</a></p>
+    </div>
+    <div class="box">
+      <h3>2. The model</h3>
+      <div class="seg" id="model-seg" role="group" aria-label="Model">
+        <button data-m="ann_lstm" aria-pressed="true">ANN-LSTM</button><button data-m="cnn_lstm" aria-pressed="false">CNN-LSTM</button><button data-m="both" aria-pressed="false">Both</button>
+      </div>
+      <div class="model-info" id="model-info"></div>
+      <h3 style="margin-top:22px">3. Run it</h3>
+      <button class="run" id="run">Run the forecast</button>
+      <p class="note" id="status"></p>
+    </div>
+  </section>
+
+  <section id="results" hidden>
+    <h2>What the models say</h2>
+    <p class="lede" id="res-lede"></p>
+    <div class="facts" id="res-facts"></div>
+
+    <div class="box" style="margin-top:18px">
+      <div class="chart-head"><h3>Readings and forecasts over time</h3>
+        <div class="seg" id="ahead-seg" role="group" aria-label="Looking ahead"><button data-h="0">5 min ahead</button><button data-h="3" aria-pressed="true">20 min</button><button data-h="7">40 min</button></div></div>
+      <canvas class="chart" id="c-time" style="height:320px"></canvas>
+      <div class="keys" id="k-time"></div>
+      <p class="note">Each forecast line is drawn at the time it was forecasting for, so a perfect model sits on the measured line.</p>
+    </div>
+
+    <div class="box" style="margin-top:18px">
+      <div class="chart-head"><h3>Watch the model make one forecast</h3>
+        <div class="stepctl"><button id="play" type="button">Play</button><input type="range" id="step" min="11" max="11" value="11" aria-label="Moment of the forecast"><span id="step-time"></span></div></div>
+      <p class="step-say" id="step-say"></p>
+      <div class="grid2 step-grid">
+        <div><canvas class="chart" id="c-next" style="height:270px"></canvas><div class="keys" id="k-next"></div>
+          <p class="note">Drag the slider or press Play to move through the storm. The shaded box on the chart above shows the same hour.</p></div>
+        <div>
+          <h4>1. What the model reads: the last hour, 12 readings</h4><div class="tablewrap"><table class="io" id="t-in"></table></div>
+          <h4>2. What it outputs: depth for the next 8 steps (minutes ahead)</h4><div class="tablewrap"><table class="io" id="t-out"></table></div>
+          <p class="note">This is the trained network running on these exact numbers: the same weights that were learned from 2020–2025 storms. "?" means after your last reading.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:18px"><h3>How close it was on this data</h3><table id="t-acc"></table>
+      <p class="note">Only rows where the real depth later is known. RMSE: typical miss in inches, lower is better. R² near 1 is good, 0 is no better than the average.</p></div>
+
+    <h2 style="margin-top:56px">Compare the models</h2>
+    <p class="lede" id="cmp-lede">How each model did on your data at every forecast time, against the simplest baseline: assuming the water stays as it is now (persistence). A model is only useful where it beats persistence.</p>
+    <div class="grid2">
+      <div class="box"><h3>Typical miss, by minutes ahead (RMSE, inches; lower is better)</h3>
+        <canvas class="chart" id="c-rmse" style="height:260px"></canvas><div class="keys" id="k-rmse"></div></div>
+      <div class="box"><h3>R², by minutes ahead (higher is better; 0 = no better than the average)</h3>
+        <canvas class="chart" id="c-r2" style="height:260px"></canvas><div class="keys" id="k-r2"></div></div>
+    </div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="box"><h3 id="sc-title">Forecast against what really happened</h3>
+        <canvas class="chart" id="c-scatter" style="height:300px"></canvas><div class="keys" id="k-scatter"></div>
+        <p class="note">Each dot is one forecast. Dots on the diagonal line were exactly right; below it the model forecast too little water, above it too much. Uses the minutes-ahead buttons above.</p></div>
+      <div class="box"><h3>Which model wins, by minutes ahead</h3><table id="t-win"></table>
+        <p class="note">The model with the lowest typical miss at each forecast time on this data. With one storm, small differences can be luck.</p></div>
+    </div>
+
+    <div class="box" style="margin-top:18px"><div class="chart-head"><h3>All readings</h3><a href="#" id="download">Download as CSV</a></div>
+      <div class="tablewrap"><table id="t-rows"></table></div></div>
+  </section>
+
+  <footer>The models were trained on New York FloodNet sensors and airport rain gauges (2021–2025) and tested on July–October 2026. On other places or rain sources they may be less accurate. Runs entirely in your browser; nothing you paste is uploaded.</footer>
+</main>
+<script src="js/sky.js" defer></script>
+<script src="js/models.js" defer></script>
+<script src="js/lab.js" defer></script>
+</body>
+</html>

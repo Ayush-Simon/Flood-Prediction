@@ -1,0 +1,6 @@
+,mean,std
+LSTM (standard),1.882,0.043
+LSTM + perfect rain forecast,1.825,0.054
+Att-LSTM + perfect rain forecast,1.871,0.032
+Att-LSTM + perfect forecast + terrain,1.873,0.031
+Att-LSTM + nowcast + terrain (realistic),1.922,0.01

@@ -1,0 +1,5 @@
+{
+  "ANN-LSTM (LSTM + ANN rain forecast)": "23% of 132 flooded test storms",
+  "CNN-LSTM": "30% of 132 flooded test storms",
+  "CNN-LSTM + ANN rain forecast": "28% of 132 flooded test storms"
+}

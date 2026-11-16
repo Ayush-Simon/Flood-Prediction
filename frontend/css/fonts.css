@@ -1,0 +1,10 @@
+/* IBM Plex Sans, served from this site (no third-party font requests). Licence: assets/fonts/OFL-LICENSE.txt */
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:400; font-display:swap; src:url("../assets/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:500; font-display:swap; src:url("../assets/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:600; font-display:swap; src:url("../assets/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:700; font-display:swap; src:url("../assets/fonts/ibm-plex-sans-latin-700-normal.woff2") format("woff2"); }
+/* Outfit: display face for headlines and big numbers. Licence: assets/fonts/OFL-LICENSE-Outfit.txt */
+@font-face { font-family:"Outfit"; font-style:normal; font-weight:300; font-display:swap; src:url("../assets/fonts/outfit-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family:"Outfit"; font-style:normal; font-weight:400; font-display:swap; src:url("../assets/fonts/outfit-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family:"Outfit"; font-style:normal; font-weight:500; font-display:swap; src:url("../assets/fonts/outfit-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family:"Outfit"; font-style:normal; font-weight:600; font-display:swap; src:url("../assets/fonts/outfit-latin-600-normal.woff2") format("woff2"); }

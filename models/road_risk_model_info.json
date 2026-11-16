@@ -1,0 +1,41 @@
+{
+  "features": [
+    "length_ft",
+    "width_ft",
+    "total_lanes",
+    "travel_lanes",
+    "speed_mph",
+    "one_way",
+    "boro",
+    "drains",
+    "drains_per_100ft",
+    "drain_dist_ft",
+    "drains_500ft",
+    "nbr_streets",
+    "mod_nuis",
+    "mod_deep",
+    "ext_nuis",
+    "ext_deep",
+    "mod_nbr_share",
+    "rain_total",
+    "rain_max1h",
+    "rain_max3h",
+    "rain_max6h",
+    "wet_hours",
+    "rain_prev1",
+    "rain_prev3",
+    "month_sin",
+    "month_cos",
+    "hist_flood",
+    "hist_drain",
+    "area_flood"
+  ],
+  "split": {
+    "burn_in_end": "2021-09-30",
+    "train_end": "2025-06-30",
+    "val_end": "2025-12-31",
+    "test_end": "2026-07-28"
+  },
+  "wet_day_mm": 5.0,
+  "history_origin": "2020-10-01"
+}

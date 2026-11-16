@@ -1,0 +1,63 @@
+{
+  "rain_forecasters": {
+    "AR": {
+      "RMSE": 0.5639079804260475,
+      "R2_total": 0.2049548625946045
+    },
+    "XGBoost": {
+      "RMSE": 0.5955555967662846,
+      "R2_total": 0.11565577983856201
+    },
+    "ANN": {
+      "RMSE": 0.5619476573502558,
+      "R2_total": 0.21304422616958618
+    }
+  },
+  "improvement_vs_standard_lstm_pct": {
+    "AR": {
+      "R2_change_pct": -20.54453546768121,
+      "RMSE_change_pct": 6.807545000139357
+    },
+    "XGBoost": {
+      "R2_change_pct": -7.365950836000497,
+      "RMSE_change_pct": 2.0273955964754418
+    },
+    "ANN": {
+      "R2_change_pct": -23.182134797382197,
+      "RMSE_change_pct": 7.916655818871225
+    },
+    "Perfect": {
+      "R2_change_pct": 4.278835625501948,
+      "RMSE_change_pct": -2.8845920068699735
+    }
+  },
+  "seed_rmse": {
+    "LSTM (standard, direct)": [
+      1.9261,
+      1.8236,
+      1.8953
+    ],
+    "AR-LSTM (recursive)": [
+      1.9184,
+      2.0881,
+      2.2722
+    ],
+    "XGBoost-LSTM (recursive)": [
+      1.9819,
+      2.0639,
+      2.0087
+    ],
+    "ANN-LSTM (recursive, paper)": [
+      2.0558,
+      2.0614,
+      2.1422
+    ],
+    "Perfect rain LSTM (recursive, upper bound)": [
+      1.8304,
+      1.9325,
+      1.8773
+    ]
+  },
+  "extreme_storms": 10,
+  "extreme_samples": 486
+}

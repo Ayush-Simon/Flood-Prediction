@@ -1,0 +1,26 @@
+# environment and system files
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+
+# the secure data store (rebuilt with backend/build_store.py) and its admin token
+backend/store/
+.env
+
+# old files waiting to be deleted
+_to_delete/
+
+# large raw data: re-download with the notebook / scripts
+data/raw/*
+!data/raw/floodnet_sensors.csv
+!data/raw/nyc_sensor_terrain.csv
+
+# large intermediate files: rebuilt by the scripts
+data/processed/nyc_hourly_full.csv
+data/processed/nyc_depth_hourly.csv
+data/processed/nyc_rain_forecasts.csv
+data/processed/nyc_storm_windows.csv
+data/processed/nyc_street_features.csv
+data/processed/nyc_streets.csv
+data/processed/nyc_street_risk_scenarios.csv

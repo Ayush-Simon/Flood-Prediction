@@ -1,0 +1,556 @@
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const C = { rain:"#8fd0ff", flood:"#ff6a5c", warn:"#ffb648", watch:"#e9d66b", route:"#c9b5ff", soft:"rgba(232,240,241,.7)", line:"rgba(255,255,255,.1)", ink:"#f2f6f6", ok:"#74e3b5" };
+const BODY = getComputedStyle(document.documentElement).getPropertyValue("--body");
+const NICE = { "ANN-LSTM (LSTM + ANN rain forecast)": "ANN-LSTM", "CNN-LSTM + ANN rain forecast": "CNN-LSTM + ANN rain", "LSTM (standard)": "LSTM", "Persistence": "Persistence (baseline)",
+  "LSTM + perfect rain forecast": "LSTM + perfect rain (upper bound)", "CNN-LSTM + perfect rain forecast": "CNN-LSTM + perfect rain (upper bound)", "XGBoost (no future rain)": "XGBoost",
+  "XGBoost + perfect rain forecast": "XGBoost + perfect rain (upper bound)", "Att-LSTM + perfect rain forecast": "Attention-LSTM + perfect rain (upper bound)",
+  "Att-LSTM + perfect forecast + terrain": "Attention-LSTM + terrain + perfect rain (upper bound)", "Att-LSTM + nowcast + terrain (realistic)": "Attention-LSTM + terrain" };
+const nice = m => NICE[m] || m;
+const MINE = new Set(["ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM", "CNN-LSTM + ANN rain forecast"]);
+const LIVE_MODELS = ["CNN-LSTM", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM + ANN rain forecast", "LSTM (standard)", "Persistence"];   // need no future data
+const STYLE = { "Persistence": ["#a9b8c2", [4,4]], "LSTM (standard)": ["#8fd0ff", []], "ANN-LSTM (LSTM + ANN rain forecast)": ["#ffb648", []], "CNN-LSTM": ["#ff6a5c", []],
+  "CNN-LSTM + ANN rain forecast": ["#ff9ec4", []], "LSTM + perfect rain forecast": ["#74e3b5", [2,3]], "CNN-LSTM + perfect rain forecast": ["#ff6a5c", [2,3]],
+  "XGBoost (no future rain)": ["#e9d66b", []], "XGBoost + perfect rain forecast": ["#e9d66b", [2,3]], "Att-LSTM + perfect rain forecast": ["#c9b5ff", [2,3]],
+  "Att-LSTM + perfect forecast + terrain": ["#c9b5ff", [6,3]], "Att-LSTM + nowcast + terrain (realistic)": ["#c9b5ff", []] };
+const DEFAULT_ON = new Set(["LSTM (standard)", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM"]);
+const GAUGE = { NYC:["Central Park", "#8fd0ff"], LGA:["LaGuardia", "#c9b5ff"], JFK:["JFK", "#74e3b5"] };
+const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
+const hhmm = m => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+const slotLabel = i => hhmm((i + 1) * 5);            // slot i = the 5 minutes ending at this time
+
+/* ---------------------------------------------------------------- charts */
+function chart(cv, o) {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = 40, R = o.y2 ? 36 : 10, T = 10, B = 24, n = o.n;
+  const vals = o.series.filter(s => !s.y2).flatMap(s => s.data).filter(v => v != null), max = Math.max(o.minMax || 1, ...vals);
+  const X = i => L + (W - L - R) * (n > 1 ? i / (n - 1) : 0), Y = v => T + (H - T - B) * (1 - v / max), Y2 = v => T + (H - T - B) * (1 - v / 100);
+  g.font = "11px " + BODY; g.fillStyle = C.soft; g.strokeStyle = C.line; g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) { const v = max * k / 4, y = Y(v); g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.textAlign = "right"; g.fillText(v.toFixed(max < 5 ? 1 : 0), L - 6, y + 4); if (o.y2) { g.textAlign = "left"; g.fillText(25 * k, W - R + 6, y + 4); } }
+  g.textAlign = "center"; for (let i = 0; i < n; i += o.tick) g.fillText(o.label(i), X(i), H - 6);
+  if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = "rgba(255,255,255,.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
+  for (const s of o.series) {
+    const yy = s.y2 ? Y2 : Y;
+    if (s.bars) { g.fillStyle = s.color; const w = Math.max(1, (W - L - R) / n - 2); s.data.forEach((v, i) => { if (v) g.fillRect(X(i) - w / 2, yy(v), w, yy(0) - yy(v)); }); continue; }
+    g.strokeStyle = s.color; g.lineWidth = s.width || 1.8; g.setLineDash(s.dash || []); g.beginPath(); let pen = false;
+    s.data.forEach((v, i) => { if (v == null) { pen = false; return; } pen ? g.lineTo(X(i), yy(v)) : g.moveTo(X(i), yy(v)); pen = true; });
+    g.stroke(); g.setLineDash([]);
+  }
+}
+
+/* ---------------------------------------------------------------- road network + routing */
+const KX = 0.758, M_PER = 1.113;
+let ROADS = null, GRAPH = null;
+function buildGraph(r) {
+  const n = r.off.length - 1, key = new Map(), nx = [], ny = [];
+  const a = new Int32Array(n), b = new Int32Array(n), len = new Float32Array(n), mx = new Float32Array(n), my = new Float32Array(n);
+  const node = (x, y) => { const k = x * 200000 + y; let i = key.get(k); if (i === undefined) { i = nx.length; key.set(k, i); nx.push(x); ny.push(y); } return i; };
+  for (let s = 0; s < n; s++) {
+    const p0 = r.off[s], p1 = r.off[s + 1] - 1; let L = 0;
+    for (let p = p0; p < p1; p++) L += Math.hypot((r.pts[2*p+2] - r.pts[2*p]) * KX, r.pts[2*p+3] - r.pts[2*p+1]);
+    a[s] = node(r.pts[2*p0], r.pts[2*p0+1]); b[s] = node(r.pts[2*p1], r.pts[2*p1+1]); len[s] = L * M_PER;
+    const pm = (p0 + p1) >> 1, pn = Math.min(pm + 1, p1); mx[s] = (r.pts[2*pm] + r.pts[2*pn]) / 2; my[s] = (r.pts[2*pm+1] + r.pts[2*pn+1]) / 2;
+  }
+  const N = nx.length, deg = new Int32Array(N + 1);
+  for (let s = 0; s < n; s++) { deg[a[s] + 1]++; deg[b[s] + 1]++; }
+  for (let i = 0; i < N; i++) deg[i + 1] += deg[i];
+  const fill = deg.slice(0, N), adjSeg = new Int32Array(2 * n), adjTo = new Int32Array(2 * n);
+  for (let s = 0; s < n; s++) { adjSeg[fill[a[s]]] = s; adjTo[fill[a[s]]++] = b[s]; adjSeg[fill[b[s]]] = s; adjTo[fill[b[s]]++] = a[s]; }
+  return { n, N, a, b, len, mx, my, nx: Int32Array.from(nx), ny: Int32Array.from(ny), deg, adjSeg, adjTo };
+}
+function nearestNode(G, x, y) { let best = -1, bd = Infinity; for (let i = 0; i < G.N; i++) { if (G.deg[i+1] === G.deg[i]) continue; const d = ((G.nx[i]-x)*KX)**2 + (G.ny[i]-y)**2; if (d < bd) { bd = d; best = i; } } return best; }
+function nearestStreet(G, x, y, limit) { let best = -1, bd = limit * limit; for (let s = 0; s < ROADS.n_streets; s++) { const d = ((G.mx[s]-x)*KX)**2 + (G.my[s]-y)**2; if (d < bd) { bd = d; best = s; } } return best; }
+function route(G, from, to, mult) {
+  const dist = new Float64Array(G.N).fill(Infinity), prevSeg = new Int32Array(G.N).fill(-1), prevNode = new Int32Array(G.N).fill(-1), done = new Uint8Array(G.N);
+  const h = i => Math.hypot((G.nx[i]-G.nx[to])*KX, G.ny[i]-G.ny[to]) * M_PER;
+  const heap = [[h(from), from]]; dist[from] = 0;
+  const push = e => { heap.push(e); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { let l = 2*i+1, r = l+1, m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  while (heap.length) {
+    const [, u] = pop(); if (done[u]) continue; done[u] = 1; if (u === to) break;
+    for (let e = G.deg[u]; e < G.deg[u+1]; e++) { const s = G.adjSeg[e], v = G.adjTo[e], m = mult(s); if (m === Infinity || done[v]) continue;
+      const nd = dist[u] + G.len[s] * m; if (nd < dist[v]) { dist[v] = nd; prevSeg[v] = s; prevNode[v] = u; push([nd + h(v), v]); } }
+  }
+  if (dist[to] === Infinity) return null;
+  const segs = []; for (let u = to; u !== from; u = prevNode[u]) segs.push(prevSeg[u]);
+  return segs.reverse();
+}
+
+/* ---------------------------------------------------------------- flood simulation (past storms)
+   The road model gives each street a risk level for the whole storm day. To show HOW the storm unfolded,
+   each street is linked to its nearest rain gauge and lit up when the gauge's recent rain passes a threshold
+   that is lower for riskier streets. Recent rain = a leaky bucket of 5-minute gauge rain (drains ~8% every 5 min). */
+const GAUGE_LL = { NYC: [40.7790, -73.9692], LGA: [40.7794, -73.8803], JFK: [40.6386, -73.7622] };
+const GKEYS = ["NYC", "LGA", "JFK"], LEAK = 0.92;
+const LIGHT_AT = { 3: 5, 2: 9, 1: 14 }, FULL_AFTER = 6;       // mm of recent rain at which a street starts / is fully shown
+let SG = null, WB = null;                                      // street -> gauge index; bucket per gauge per 5-min slot
+function streetGauges() {
+  const gx = GKEYS.map(k => [(GAUGE_LL[k][1] + 74.27) * 1e5, (GAUGE_LL[k][0] - 40.48) * 1e5]);
+  SG = new Uint8Array(ROADS.n_streets);
+  for (let s = 0; s < ROADS.n_streets; s++) { let b = 0, bd = Infinity; gx.forEach(([x, y], i) => { const d = ((GRAPH.mx[s] - x) * KX) ** 2 + (GRAPH.my[s] - y) ** 2; if (d < bd) { bd = d; b = i; } }); SG[s] = b; }
+}
+function buckets(st) {
+  const raw = GKEYS.map(k => st.gauges[k] || null);
+  return raw.map((a, gi) => { const w = new Float32Array(288); let v = 0;
+    for (let t = 0; t < 288; t++) { let r = a ? a[t] : null;
+      if (r == null) { const o = raw.map(x => x && x[t]).filter(x => x != null); r = o.length ? o.reduce((p, q) => p + q, 0) / o.length : 0; }
+      v = v * LEAK + r; w[t] = v; }
+    return w; });
+}
+function bucketAt(g, t) { const a = WB[g], i = Math.min(286, Math.floor(t)), f = t - i; return a[i] * (1 - f) + a[i + 1] * f; }
+let LIVE_BASE = 0, NOW_SLOT = 0;                               // live: slot 0 = two hours ago (minutes after midnight), NOW_SLOT = now
+function labelFor(slot) { if (MODE !== "live") return slotLabel(slot); const m = LIVE_BASE + 5 * slot; return hhmm(((m % 1440) + 1440) % 1440); }
+function liveBuckets(L) {
+  const toMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5), q = L.rain15 || [], h = L.next24 || { time: [], rain: [] };
+  if (q.length) { LIVE_BASE = toMin(q[0][0]) - 15; const k = q.findIndex(r => !r[2]); NOW_SLOT = Math.max(0, (k < 0 ? q.length : k) * 3); }
+  else { LIVE_BASE = (h.time.length ? toMin(h.time[0]) - 60 : 0) - 120; NOW_SLOT = 24; }
+  let h0 = h.time.length ? toMin(h.time[0]) - 60 : null;     // hourly value i covers the hour ending at time[i]
+  if (h0 != null && h0 < LIVE_BASE - 60) h0 += 1440;        // forecast starts after midnight
+  const city = new Float32Array(288);
+  for (let t = 0; t < 288; t++) {
+    const m = LIVE_BASE + 5 * t + 5, qi = Math.floor(5 * t / 15);
+    if (q.length && qi < q.length) { city[t] = (q[qi][1] || 0) / 3; continue; }
+    if (h0 != null) { const d = m - h0, hi = Math.floor((d - 1) / 60); if (hi >= 0 && hi < h.rain.length) city[t] = (h.rain[hi] || 0) / 12; }
+  }
+  const w = new Float32Array(288); let v = 0; for (let t = 0; t < 288; t++) { v = v * LEAK + city[t]; w[t] = v; }
+  return [w, w, w];
+}
+function shown(level, g, t) { if (!WB || !level) return MODE === "live" ? 1 : 0; return Math.max(0, Math.min(1, (bucketAt(g, t) - LIGHT_AT[level]) / FULL_AFTER)); }
+function floodedNow(t) { if (!map.groups) return 0; let n = 0; for (const lv of [3, 2, 1]) for (let g = 0; g < 3; g++) if (shown(lv, g, t) >= 0.5) n += map.groups[lv][g].n; return n; }
+function drawTimeline() {
+  const cv = $("tl"), d = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight; cv.width = W * d; cv.height = H * d;
+  const g = cv.getContext("2d"); g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, W, H); if (!WB) return;
+  const tot = t => WB.reduce((s, a) => s + a[t], 0) / 3, mx = Math.max(6, ...Array.from({ length: 288 }, (_, t) => tot(t)));
+  g.fillStyle = "rgba(143,208,255,.55)"; for (let t = 0; t < 288; t++) { const h = tot(t) / mx * (H - 2); g.fillRect(t / 287 * W - 1, H - h, Math.max(1.2, W / 288), h); }
+  g.strokeStyle = "rgba(255,106,92,.8)"; g.setLineDash([3, 3]); const y = H - LIGHT_AT[3] / mx * (H - 2); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
+  if (MODE === "live") { const x = NOW_SLOT / 287 * W; g.strokeStyle = "rgba(255,255,255,.9)"; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); g.fillStyle = "rgba(255,255,255,.9)"; g.font = "10px " + BODY; g.fillText("now", Math.min(x + 3, W - 22), 9); }
+}
+
+/* ---------------------------------------------------------------- map */
+const map = { s: 1, ox: 0, oy: 0, paths: {}, level: null, prob: null, start: -1, end: -1, routeSegs: null, plainSegs: null, pick: null, showRep: false };
+const wx = x => x * KX, wy = y => -y;
+let MODE = "live", LIVE = null, PAST = null, STORM = null, INDEX = null, WX = null, T = 0, model = "CNN-LSTM", ahead = "20", sensorId = null, horizon = "20", modelsOn = new Set(DEFAULT_ON);
+function segPath(list) { const r = ROADS, p = new Path2D(); for (const s of list) { let q = r.off[s]; p.moveTo(wx(r.pts[2*q]), wy(r.pts[2*q+1])); for (q++; q < r.off[s+1]; q++) p.lineTo(wx(r.pts[2*q]), wy(r.pts[2*q+1])); } return p; }
+function initMap() {
+  map.cv = $("map"); map.g = map.cv.getContext("2d");
+  const all = [...Array(ROADS.off.length - 1).keys()];
+  map.paths.streets = segPath(all.filter(s => s < ROADS.n_streets)); map.paths.major = segPath(all.filter(s => s >= ROADS.n_streets));
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < ROADS.pts.length; i += 2) { const x = wx(ROADS.pts[i]), y = wy(ROADS.pts[i+1]); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  map.bounds = [x0, y0, x1, y1];
+  let drag = null, moved = 0;
+  map.cv.addEventListener("pointerdown", e => { if (e.pointerType === "touch" || e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; map.cv.setPointerCapture(e.pointerId); map.cv.classList.add("drag"); });
+  map.cv.addEventListener("pointermove", e => { if (drag) { map.ox += e.clientX - drag[0]; map.oy += e.clientY - drag[1]; moved += Math.abs(e.clientX - drag[0]) + Math.abs(e.clientY - drag[1]); drag = [e.clientX, e.clientY]; draw(); $("tip").style.display = "none"; } else hover(e); });
+  map.cv.addEventListener("pointerup", e => { map.cv.classList.remove("drag"); if (e.pointerType === "touch" || (drag && moved < 10)) click(e); drag = null; });
+  map.cv.addEventListener("pointerleave", () => $("tip").style.display = "none");
+  // zoom only on purpose: Ctrl/Cmd + scroll (and trackpad pinch, which the browser reports with Ctrl). Plain scrolling scrolls the page.
+  let hintT = 0;
+  map.cv.addEventListener("wheel", e => {
+    if (!(e.ctrlKey || e.metaKey)) { $("hint").classList.add("on"); clearTimeout(hintT); hintT = setTimeout(() => $("hint").classList.remove("on"), 1300); return; }
+    e.preventDefault(); const r = map.cv.getBoundingClientRect(); zoom(Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  $("z-in").onclick = () => zoom(1.6); $("z-out").onclick = () => zoom(1 / 1.6); $("z-fit").onclick = () => { fit(); draw(); };
+  const mode = m => { map.pick = map.pick === m ? null : m; syncPick(); };
+  $("b-start").onclick = () => mode("start"); $("b-end").onclick = () => mode("end");
+  $("b-clear").onclick = () => { $("q-from").value = $("q-to").value = ""; map.start = map.end = -1; map.routeSegs = map.plainSegs = null; map.pick = null; syncPick(); routeInfo(); draw(); };
+  $("b-rep").onclick = e => { map.showRep = !map.showRep; e.target.setAttribute("aria-pressed", map.showRep); draw(); };
+  new ResizeObserver(() => { size(); if (!map.fitted) { fit(); map.fitted = true; } draw(); }).observe(map.cv);
+}
+function syncPick() { $("b-start").setAttribute("aria-pressed", map.pick === "start"); $("b-end").setAttribute("aria-pressed", map.pick === "end"); map.cv.classList.toggle("pick", !!map.pick); }
+function size() { const d = window.devicePixelRatio || 1; map.cv.width = map.cv.clientWidth * d; map.cv.height = map.cv.clientHeight * d; }
+function fit() { const [x0, y0, x1, y1] = map.bounds, W = map.cv.clientWidth, H = map.cv.clientHeight - 70; map.s = Math.min(W / (x1 - x0), H / (y1 - y0)) * 0.94; map.ox = (W - (x0 + x1) * map.s) / 2; map.oy = (H - (y0 + y1) * map.s) / 2; }
+function zoom(f, cx, cy) { cx ??= map.cv.clientWidth / 2; cy ??= map.cv.clientHeight / 2; const ns = Math.max(0.004, Math.min(1.2, map.s * f)); f = ns / map.s; map.ox = cx - (cx - map.ox) * f; map.oy = cy - (cy - map.oy) * f; map.s = ns; draw(); }
+const toMap = (px, py) => [(px - map.ox) / map.s / KX, -(py - map.oy) / map.s];
+const toPx = (x, y) => [wx(x) * map.s + map.ox, wy(y) * map.s + map.oy];
+
+function forecastAt(q, t) {
+  if (MODE === "live") return q.fc ? { f: q.fc[(+ahead) / 5 - 1], a: null, now: q.now } : null;                      // standing at slot t, the model's depth forecast for t + ahead, and what really happened
+  if (!q.pred) return null;
+  const k = STORM.models.indexOf(model), tgt = t + (+ahead) / 5;
+  if (k < 0 || tgt > 287) return null;
+  return { f: q.pred[ahead][k][tgt], a: q.obs[tgt], now: q.obs[t] };
+}
+function sensorColor(v) { return v == null ? "#2a3a44" : v >= 4 ? C.flood : v > 0.5 ? C.warn : "#1d2c35"; }
+function draw() {
+  const g = map.g, d = window.devicePixelRatio || 1, s = map.s; if (!g || !ROADS) return;
+  const px = w => w / s, z = Math.min(1, Math.max(0, (s - 0.01) / 0.05));
+  // the street network only changes when the view moves: draw it once into a cached layer, then reuse it every frame
+  const key = [map.cv.width, map.cv.height, s, map.ox, map.oy].join();
+  if (map.baseKey !== key) {
+    const b = map.base || (map.base = document.createElement("canvas")), bg = b.getContext("2d");
+    if (b.width !== map.cv.width || b.height !== map.cv.height) { b.width = map.cv.width; b.height = map.cv.height; }
+    bg.setTransform(1, 0, 0, 1, 0, 0); bg.clearRect(0, 0, b.width, b.height); bg.fillStyle = "rgba(8,15,20,.78)"; bg.fillRect(0, 0, b.width, b.height);
+    bg.setTransform(d * s, 0, 0, d * s, d * map.ox, d * map.oy); bg.lineCap = "round"; bg.lineJoin = "round";
+    bg.strokeStyle = "#24343e"; bg.lineWidth = px(0.6 + 2.6 * z); bg.stroke(map.paths.streets);
+    bg.strokeStyle = "#5a6e7a"; bg.lineWidth = px(1.3 + 3.2 * z); bg.stroke(map.paths.major);
+    if (z > 0.35) { bg.strokeStyle = "#3a4f5b"; bg.lineWidth = px(0.4 + 1.6 * z); bg.stroke(map.paths.streets); }
+    map.baseKey = key;
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, map.cv.width, map.cv.height); g.drawImage(map.base, 0, 0);
+  g.setTransform(d * s, 0, 0, d * s, d * map.ox, d * map.oy); g.lineCap = "round"; g.lineJoin = "round";
+  if (map.groups) for (let gi = 0; gi < 3; gi++) {
+    const a1 = shown(1, gi, T), a2 = shown(2, gi, T), a3 = shown(3, gi, T), G = map.groups;
+    if (a1 > 0) { g.globalAlpha = 0.7 * a1; g.strokeStyle = C.watch; g.lineWidth = px(1.2 + 2.4 * z); g.stroke(G[1][gi].p); }
+    if (a2 > 0) { g.globalAlpha = a2; g.strokeStyle = C.warn; g.lineWidth = px(1.8 + 2.8 * z); g.stroke(G[2][gi].p); }
+    if (a3 > 0) { g.globalAlpha = a3; g.strokeStyle = "rgba(255,106,92,.3)"; g.lineWidth = px((6 + 6 * z) * (0.6 + 0.4 * a3)); g.stroke(G[3][gi].p);
+      g.strokeStyle = C.flood; g.lineWidth = px(2.6 + 3.4 * z); g.stroke(G[3][gi].p); }
+    g.globalAlpha = 1;
+  }
+  if (map.plainSegs) { g.strokeStyle = "rgba(255,255,255,.55)"; g.lineWidth = px(2.5); g.setLineDash([px(7), px(7)]); g.stroke(segPath(map.plainSegs)); g.setLineDash([]); }
+  if (map.routeSegs) { const p = segPath(map.routeSegs); g.strokeStyle = "#0a1216"; g.lineWidth = px(9); g.stroke(p); g.strokeStyle = C.route; g.lineWidth = px(5); g.stroke(p); }
+  g.setTransform(d, 0, 0, d, 0, 0);
+  const st = STORM;
+  if (st && map.showRep && st.has_reports) { g.strokeStyle = C.rain; g.lineWidth = 1.6; for (const i of st.reported) { const [x, y] = toPx(GRAPH.mx[i], GRAPH.my[i]); g.beginPath(); g.arc(x, y, 6, 0, 7); g.stroke(); } }
+  if (st) for (const q of st.sensors) { if (!q.observed) continue; const [x, y] = toPx(q.x, q.y), fc = forecastAt(q, T), v = fc ? fc.f : 0, r = 6 + Math.min(8, (v || 0) / 3);
+    g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath();
+    g.fillStyle = sensorColor(v); g.fill(); g.strokeStyle = q.id === sensorId ? C.route : C.ink; g.lineWidth = q.id === sensorId ? 2.5 : 1.3; g.stroke(); }
+  const pin = (node, label, col) => { if (node < 0) return; const [x, y] = toPx(GRAPH.nx[node], GRAPH.ny[node]); g.beginPath(); g.arc(x, y, 9, 0, 7); g.fillStyle = col; g.fill(); g.strokeStyle = "#0a1216"; g.lineWidth = 2; g.stroke(); g.fillStyle = "#0a1216"; g.font = "600 11px " + BODY; g.textAlign = "center"; g.fillText(label, x, y + 4); };
+  pin(map.start, "A", C.ok); pin(map.end, "B", C.route);
+}
+function nearSensor(px, py) { if (!STORM) return null; for (const q of STORM.sensors) { const [x, y] = toPx(q.x, q.y); if (q.observed && Math.hypot(x - px, y - py) < 11) return q; } return null; }
+let hoverT = 0;
+function hover(e) { const now = performance.now(); if (now - hoverT < 50) return; hoverT = now;
+  const r = map.cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, tip = $("tip"), q = nearSensor(px, py);
+  let html = "";
+  if (q) { const fc = forecastAt(q, T); html = `<b>${esc(q.name)}</b><br>` + (MODE === "live" ? `Forecast in ${ahead} min: ${fmtIn(fc && fc.f)}` : fc ? `${esc(nice(model))} forecast for ${hhmm((T + 1) * 5 + +ahead)}: ${fmtIn(fc.f)}<br>Actual: ${fmtIn(fc.a)}` : `Peak that day: ${q.peak} in`); }
+  else if (map.s > 0.02) { const [x, y] = toMap(px, py), s = nearestStreet(GRAPH, x, y, Math.max(40, 14 / map.s)); if (s >= 0) { const lv = map.level[s]; html = `<b>${esc(ROADS.names[ROADS.name[s]])}</b><br>${["No flag", "Low risk", "Medium risk", "High risk"][lv]}${lv ? ", " + (map.prob[s] / 100).toFixed(1) + "% chance of a report" : ""}`; } }
+  if (!html) { tip.style.display = "none"; return; }
+  tip.innerHTML = html; tip.style.display = "block"; tip.style.left = Math.min(px + 14, r.width - 260) + "px"; tip.style.top = (py + 14) + "px"; }
+function click(e) { const r = map.cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  if (!map.pick) { const q = nearSensor(px, py); if (q && q.obs && MODE === "past") selectSensor(q.id); return; }
+  const [x, y] = toMap(px, py), node = nearestNode(GRAPH, x, y);
+  if (map.pick === "start") { map.start = node; map.pick = map.end < 0 ? "end" : null; } else { map.end = node; map.pick = null; }
+  syncPick(); computeRoute(); draw(); }
+function computeRoute() {
+  map.routeSegs = map.plainSegs = null; if (map.start < 0 || map.end < 0) return routeInfo();
+  const on = WB ? [0, 1, 2, 3].map(l => [0, 1, 2].map(gi => shown(l, gi, T) >= 0.5)) : null;
+  const lv = s => { if (s >= ROADS.n_streets) return 0; const l = map.level[s]; return !on || (l && on[l][SG[s]]) ? l : 0; }, cost = [1, 1.5, 4, Infinity];
+  const plain = route(GRAPH, map.start, map.end, () => 1);
+  let safe = route(GRAPH, map.start, map.end, s => cost[lv(s)]), forced = false;
+  if (!safe && plain) { safe = route(GRAPH, map.start, map.end, s => [1, 1.5, 4, 60][lv(s)]); forced = true; }
+  map.routeSegs = safe; const same = plain && safe && plain.length === safe.length && plain.every((s, i) => s === safe[i]);
+  map.plainSegs = same ? null : plain; routeInfo(plain, safe, forced);
+}
+function routeInfo(plain, safe, forced) {
+  const el = $("route-info"), km = segs => (segs.reduce((t, s) => t + GRAPH.len[s], 0) / 1000).toFixed(1), act = s => !WB || shown(map.level[s], SG[s], T) >= 0.5, cnt = (segs, k) => segs.filter(s => s < ROADS.n_streets && map.level[s] === k && act(s)).length;
+  if (map.start < 0 && map.end < 0) { el.innerHTML = "Search above, or press “Set start” and click the map."; return; }
+  if (map.start < 0 || map.end < 0) { el.innerHTML = "Now click the other end of the trip."; return; }
+  if (!safe) { el.innerHTML = "No road connection found between these two points."; return; }
+  let h = (WB ? `At ${labelFor(Math.floor(T))}: ` : "") + `<b>safer route ${km(safe)} km</b><br>`;
+  if (forced) h += `Every way through crosses a high-risk street. This one crosses ${cnt(safe, 3)}.`;
+  else if (!map.plainSegs || (cnt(plain, 3) === 0 && cnt(plain, 2) === 0)) { h += "The shortest route is already clear of high-risk streets."; map.plainSegs = null; }
+  else h += `The shortest route (dashed, ${km(plain)} km) crosses ${cnt(plain, 3)} high-risk and ${cnt(plain, 2)} medium-risk sections. This one crosses ${cnt(safe, 3)} and ${cnt(safe, 2)}.`;
+  el.innerHTML = h;
+}
+
+/* ---------------------------------------------------------------- street search */
+const ABBR = { street: "st", avenue: "ave", av: "ave", boulevard: "blvd", road: "rd", place: "pl", drive: "dr", parkway: "pkwy", lane: "ln", court: "ct",
+  terrace: "ter", highway: "hwy", expressway: "expy", square: "sq", west: "w", east: "e", north: "n", south: "s", saint: "st" };
+const BOROS = { manhattan: 1, bronx: 2, "the bronx": 2, brooklyn: 3, queens: 4, "staten island": 5 };
+const norm = q => q.toLowerCase().replace(/[.,']/g, " ").replace(/(\d+)(st|nd|rd|th)\b/g, "$1").split(/\s+/).filter(Boolean).map(w => ABBR[w] || w).join(" ");
+let NAMEIDX = null;
+function buildNames() {
+  NAMEIDX = { norm: ROADS.names.map(norm), segs: ROADS.names.map(() => []) };
+  for (let s = 0; s < ROADS.name.length; s++) NAMEIDX.segs[ROADS.name[s]].push(s);
+  const opts = ROADS.names.map((n, i) => [n, NAMEIDX.segs[i].length]).filter(x => x[1] >= 2 && x[0] !== "Unnamed road").sort((a, b) => b[1] - a[1]).slice(0, 4000);
+  $("street-names").innerHTML = opts.map(([n]) => `<option value="${esc(n)}">`).join("");
+}
+function segsFor(part, boro) {
+  const q = norm(part); if (!q) return [];
+  const pick = ids => { let segs = ids.flatMap(i => NAMEIDX.segs[i]); if (boro) segs = segs.filter(s => s < ROADS.n_streets && ROADS.boro[s] === boro); return segs; };
+  const exact = pick(NAMEIDX.norm.flatMap((n, i) => n === q ? [i] : [])); if (exact.length) return exact;
+  const words = q.split(" "), whole = n => { const w = n.split(" "); return words.every(x => w.includes(x)); };   // all typed words, as whole words
+  return pick(NAMEIDX.norm.flatMap((n, i) => whole(n) ? [i] : []).sort((x, y) => NAMEIDX.segs[y].length - NAMEIDX.segs[x].length).slice(0, 6));
+}
+function resolvePlace(text) {
+  let q = text.trim(), boro = 0; const m = q.match(/,\s*([a-z ]+)$/i);
+  if (m && BOROS[m[1].trim().toLowerCase()]) { boro = BOROS[m[1].trim().toLowerCase()]; q = q.slice(0, m.index); }
+  const parts = q.split(/\s*(?:&|\/|@|\band\b|\bat\b)\s*/i).filter(Boolean);
+  if (!parts.length) return { err: "Type a street name." };
+  const A = segsFor(parts[0], boro);
+  if (!A.length) return { err: `No street called “${parts[0]}” found${boro ? " in that borough" : ""}.` };
+  if (parts.length > 1) {
+    const B = segsFor(parts[1], boro); if (!B.length) return { err: `No street called “${parts[1]}” found.` };
+    const nodesA = new Set(A.flatMap(s => [GRAPH.a[s], GRAPH.b[s]]));
+    const meet = B.flatMap(s => [GRAPH.a[s], GRAPH.b[s]]).filter(n => nodesA.has(n));
+    if (!meet.length) return { err: `${parts[0]} and ${parts[1]} don't cross. Try one street, or add the borough.` };
+    return { node: meet[0], label: `${ROADS.names[ROADS.name[A[0]]]} & ${ROADS.names[ROADS.name[B[0]]]}` };
+  }
+  let segs = A;                                             // one street: if it is in several boroughs, take the one with most of it
+  if (!boro) { const cnt = {}; A.forEach(s => { const b = s < ROADS.n_streets ? ROADS.boro[s] : 0; cnt[b] = (cnt[b] || 0) + 1; });
+    const best = +Object.entries(cnt).sort((x, y) => y[1] - x[1])[0][0]; if (best) segs = A.filter(s => s < ROADS.n_streets && ROADS.boro[s] === best); }
+  const cx = segs.reduce((t, s) => t + GRAPH.mx[s], 0) / segs.length, cy = segs.reduce((t, s) => t + GRAPH.my[s], 0) / segs.length;
+  let mid = segs[0], bd = Infinity; for (const s of segs) { const d = ((GRAPH.mx[s] - cx) * KX) ** 2 + (GRAPH.my[s] - cy) ** 2; if (d < bd) { bd = d; mid = s; } }
+  const bn = ["", "Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island"][segs[0] < ROADS.n_streets ? ROADS.boro[segs[0]] : 0];
+  return { node: GRAPH.a[mid], label: ROADS.names[ROADS.name[mid]] + (bn ? `, ${bn}` : "") };
+}
+function fitRoute() {
+  const segs = map.routeSegs || []; if (!segs.length) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of segs) { x0 = Math.min(x0, wx(GRAPH.mx[s])); x1 = Math.max(x1, wx(GRAPH.mx[s])); y0 = Math.min(y0, wy(GRAPH.my[s])); y1 = Math.max(y1, wy(GRAPH.my[s])); }
+  const L = 250, R = 60, T = 70, B = 90, W = map.cv.clientWidth - L - R, H = map.cv.clientHeight - T - B;   // keep clear of the legend, buttons and time bar
+  map.s = Math.min(0.5, Math.min(W / ((x1 - x0) * 1.15 || 1), H / ((y1 - y0) * 1.15 || 1)));
+  map.ox = L + W / 2 - (x0 + x1) / 2 * map.s; map.oy = T + H / 2 - (y0 + y1) / 2 * map.s; draw();
+}
+function searchRoute(e) {
+  e.preventDefault();
+  const a = resolvePlace($("q-from").value), b = resolvePlace($("q-to").value);
+  if (a.err || b.err) { $("route-info").innerHTML = esc(a.err || b.err); return; }
+  map.start = a.node; map.end = b.node; map.pick = null; syncPick();
+  computeRoute(); $("route-info").innerHTML = `<b>${esc(a.label)}</b> → <b>${esc(b.label)}</b><br>` + $("route-info").innerHTML; fitRoute();
+}
+
+/* ---------------------------------------------------------------- time + sensor list */
+const fmtIn = v => v == null ? "no data" : v < 0.05 ? "dry" : v.toFixed(1) + " in";
+let lastSig = "", lastSlot = -1;
+function setTime(t) {
+  T = Math.max(0, Math.min(287, t)); $("time").value = T; const slot = Math.floor(T);
+  $("clock").textContent = labelFor(slot);
+  if (MODE === "past") {
+    const n = floodedNow(T);
+    $("clock-note").innerHTML = n ? `<b>${n.toLocaleString()} high-risk streets</b>` : "no streets at risk";
+  }
+  if (MODE === "live" && WB) {
+    const n = floodedNow(T), dh = (T - NOW_SLOT) * 5, when = Math.abs(dh) < 3 ? "now" : dh > 0 ? `in ${dh >= 60 ? (dh / 60).toFixed(1) + " h" : Math.round(dh) + " min"}` : `${Math.round(-dh)} min ago`;
+    $("clock-note").innerHTML = (n ? `<b>${n.toLocaleString()} high-risk streets</b>` : "no streets at risk") + ` · ${when}`;
+  }
+  if (WB) {
+    const sig = [1, 2, 3].map(l => [0, 1, 2].map(gi => +(shown(l, gi, T) >= 0.5)).join("")).join("");
+    if (sig !== lastSig) { lastSig = sig; if (map.start >= 0 && map.end >= 0) computeRoute(); }
+  }
+  if (!WB) $("clock-note").textContent = "";
+  if (typeof skyAt === "function") skyAt(T);
+  if (slot !== lastSlot) { lastSlot = slot; sensorList(); if (sensorId && MODE === "past") drawDepth(); }
+  draw();
+}
+const sensorState = v => v == null || v <= 0.5 ? "dry" : v >= 4 ? "flood" : "wet";
+const shortName = n => n.replace(/^[A-Z]{1,2} ?- ?/, "");
+function sensorList() {
+  const el = $("sensor-list"), live = MODE === "live";
+  document.querySelectorAll("#ahead-seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.a === String(ahead)));
+  if (!live && !STORM.has_pred) { $("sense-sum").innerHTML = ""; el.innerHTML = ""; $("sensor-note").textContent = "Depth forecasts exist for storms from July to October 2026, the months the models were tested on. Pick one of those storms."; return; }
+  const rows = live ? STORM.sensors.filter(q => q.fc).map(q => ({ q, f: q.fc[(+ahead) / 5 - 1], ref: q.now }))
+                    : STORM.sensors.filter(q => q.pred).map(q => { const r = forecastAt(q, T) || {}; return { q, f: r.f, ref: r.a }; });
+  const dryAll = live ? 0 : STORM.sensors.filter(q => q.observed && !q.pred).length;
+  const n = { flood: 0, wet: 0, dry: dryAll }; rows.forEach(r => n[sensorState(r.f)]++);
+  $("sense-sum").innerHTML = [["flood", "flooding"], ["wet", "some water"], ["dry", "dry"]].map(([k, l]) => `<div class="s-${k}"><b>${n[k]}</b><span>${l}</span></div>`).join("");
+  const wet = rows.filter(r => sensorState(r.f) !== "dry" || (!live && sensorState(r.ref) !== "dry")).sort((a, b) => (b.f || 0) - (a.f || 0) || (b.ref || 0) - (a.ref || 0));
+  el.innerHTML = wet.map(r => { const st = sensorState(r.f);
+    const sub = live ? (r.ref == null ? "" : `now ${fmtIn(r.ref)}`) : `really ${fmtIn(r.ref)}`;
+    return `<li data-id="${esc(r.q.id)}"><span class="nm">${esc(shortName(r.q.name))}${sub ? `<small>${sub}</small>` : ""}</span><span class="tag ${st}">${st === "dry" ? "dry" : fmtIn(r.f)}</span></li>`; }).join("")
+    || `<li style="cursor:default; color:var(--soft)">All sensors should stay dry ${live ? "in the next " + ahead + " minutes" : "at this time"}.</li>`;
+  el.querySelectorAll("li[data-id]").forEach(li => li.onclick = () => live ? (sensorId = li.dataset.id, draw()) : selectSensor(li.dataset.id));
+  $("sensor-note").textContent = live
+    ? "Forecast by CNN-LSTM with the ANN rain forecast. " + (STORM.depth_connected ? "Starts from the sensors' current depths." : "Live sensor depths are not connected, so each forecast starts from a dry street: a lower bound.")
+    : `${nice(model)} forecast made at ${slotLabel(T)} for ${hhmm((T + 1) * 5 + +ahead)}. “Really” is what the sensor measured. Click a sensor to see its chart below.`;
+}
+let playing = false, lastFrame = 0, played = false;
+const SLOTS_PER_SEC = 6;                                       // 30 minutes of storm per second
+function rainSpan() { let a = 0, b = 287; if (!WB) return [a, b]; const m = t => Math.max(WB[0][t], WB[1][t], WB[2][t]);
+  while (a < 287 && m(a) < 0.5) a++; while (b > a && m(b) < 0.5) b--; return [Math.max(0, a - 12), Math.min(287, b + 12)]; }
+function frame(now) { if (!playing) return; const dt = lastFrame ? (now - lastFrame) / 1000 : 0; lastFrame = now;
+  const end = MODE === "live" ? 287 : rainSpan()[1]; if (T >= end) { play(); return; } setTime(T + dt * SLOTS_PER_SEC); requestAnimationFrame(frame); }
+function play() { if (playing) { playing = false; $("play").textContent = "▶"; return; }
+  let [a, b] = rainSpan(); if (MODE === "live") a = NOW_SLOT; if (!played || T >= b - 1) setTime(a); played = true;
+  playing = true; lastFrame = 0; $("play").textContent = "❚❚"; requestAnimationFrame(frame); }
+
+
+/* ---------------------------------------------------------------- today's prediction (live model output) */
+function today(L) {
+  const sc = L.scenarios || [], sens = L.sensors.filter(s => s.fc), dry = L.what_if;
+  const deep = sens.reduce((m, s) => Math.max(m, s.fc[7] || 0), 0), wet40 = sens.filter(s => (s.fc[7] || 0) > 0.5).length;
+  const rain40 = sens.length ? sens.reduce((a, s) => a + (s.rain_fc || []).reduce((x, y) => x + y, 0), 0) / sens.length : 0;
+  const run = L.model_run;
+  $("today-lede").textContent = `Worked out by the models at ${L.now_local} (New York time) from the rain forecast for the next 24 hours` +
+    (run ? `: the road model scored ${run.road_streets.toLocaleString()} streets and the CNN-LSTM forecast ${run.depth_sensors} sensors in ${run.seconds} s` : "") + ". It is recalculated every 15 minutes, so these numbers follow the weather.";
+  $("today-facts").innerHTML = [[L.city_rain_mm + " mm", "rain forecast, next 24 hours"], [L.peak_1h_mm + " mm", "in the wettest hour"],
+    [dry ? "0" : L.counts[0].toLocaleString(), "streets at high flood risk" + (dry ? "" : `, ${L.counts[1].toLocaleString()} medium`)],
+    [rain40.toFixed(1) + " mm", "rain the ANN expects in the next 40 minutes"]].map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join("");
+  // rain curve
+  if (sc.length) {
+    const mm = sc.map(s => s.mm), x = Math.min(mm.length - 1, (L.city_rain_mm <= mm[0] ? -1 : (() => { for (let i = 1; i < mm.length; i++) if (L.city_rain_mm <= mm[i]) return i - 1 + (L.city_rain_mm - mm[i - 1]) / (mm[i] - mm[i - 1]); return mm.length - 1; })()));
+    const maxC = Math.max(1, ...sc.map(s => s.counts[0])), maxR = Math.max(1, ...sc.map(s => s.reports));
+    chart($("scen-chart"), { n: sc.length, tick: 1, label: i => mm[i] + " mm", minMax: maxC, mark: x, y2: true,
+      series: [{ data: sc.map(s => s.counts[0]), color: C.flood, width: 2.6 }, { data: sc.map(s => s.reports / maxR * 100), color: C.warn, width: 2, dash: [5, 4], y2: true }] });
+    const next = sc.find(s => s.mm > L.city_rain_mm && s.counts[0] >= 10 && s.counts[0] > (dry ? 0 : L.counts[0]));
+    $("scen-say").innerHTML = (dry ? `Today <b>${L.city_rain_mm} mm</b> is forecast, under the 5 mm the road model needs, so no street is flagged.` : `Today <b>${L.city_rain_mm} mm</b> is forecast, so <b>${L.counts[0].toLocaleString()}</b> streets are at high flood risk.`) +
+      (next ? ` If the forecast grew to <b>${next.mm} mm</b>, that would be <b>${next.counts[0].toLocaleString()}</b> high-risk streets and about ${Math.round(next.reports)} flooding reports.` : "");
+    $("scen-note").textContent = `The road model (XGBoost) runs again for each rain total on the bottom axis, with the storm shaped like ${L.storm_shape} and the ground as wet as it really is after the last 3 days. Right scale: expected flooding reports as a share of the highest point. The curve flattens because the model was trained on real storms, which rarely went past 60 mm.`;
+  }
+  // boroughs + sensors
+  const B = L.boro || {};
+  table("t-boro", ["Borough", "High", "Medium", "Low"], Object.entries(B).map(([b, c]) => [b, ...(dry ? [0, 0, 0] : c).map(v => v.toLocaleString())]));
+  const top = sens.slice().sort((a, b) => (b.fc[7] || 0) - (a.fc[7] || 0)).slice(0, 5);
+  const anyWet = sens.some(s => s.fc.some(v => v > 0.05));
+  if (anyWet) table("t-sens", ["Sensor", "5 min", "20 min", "40 min"], top.map(s => [shortName(s.name), ...[0, 3, 7].map(k => fmtIn(s.fc[k]))]));
+  else $("t-sens").innerHTML = `<tr><td>All ${sens.length} sensors are forecast to stay dry for the next 40 minutes.</td></tr>`;
+  $("sens-say").textContent = (wet40 ? `${wet40} of ${sens.length} sensors are forecast to have water 40 minutes from now, the deepest ${fmtIn(deep)}. ` : "") + (L.depth_connected ? "" : "Live sensor depths are not connected, so each forecast starts from a dry street and comes from the coming rain alone.");
+}
+
+/* ---------------------------------------------------------------- page */
+// all data comes from the backend API (backend/server.py), never from files in the frontend
+const API = f => f.startsWith("storm_") ? "api/storm/" + f.slice(6, 16) : "api/" + f.split(".")[0];
+const getJSON = async f => { const r = await fetch(API(f), { headers: { Accept: "application/json" }, cache: "no-store" }); if (!r.ok) throw new Error(f + " " + r.status); return r.json(); };
+function facts(items) { $("facts").innerHTML = items.map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join(""); }
+function table(el, head, rows, bestCol, lowBest, mineCol) {
+  let bi = -1; if (bestCol != null) { let bv = lowBest ? Infinity : -Infinity; rows.forEach((r, i) => { if (String(r[0]).includes("upper bound")) return; const v = parseFloat(r[bestCol]); if (lowBest ? v < bv : v > bv) { bv = v; bi = i; } }); }
+  $(el).innerHTML = "<tr>" + head.map((h, i) => `<th class="${i ? "n" : ""}">${esc(h)}</th>`).join("") + "</tr>" +
+    rows.map((r, i) => `<tr class="${i === bi ? "best" : ""} ${mineCol && MINE.has(mineCol[i]) ? "mine" : ""}">` + r.map((c, j) => `<td class="${j ? "n" : ""}">${esc(c)}</td>`).join("") + "</tr>").join("");
+}
+function busiestSlot(st) { let best = 0, bv = -1; for (let t = 0; t < 288; t++) { let v = 0; for (const q of st.sensors) if (q.obs) v += q.obs[t] || 0; if (v > bv) { bv = v; best = t; } } return Math.max(0, best - (+ahead) / 5 - 2); }
+
+function paintStreets(st) {
+  map.level = new Uint8Array(ROADS.n_streets); map.prob = new Uint16Array(ROADS.n_streets);
+  const TH = INDEX.levels.map(l => l[1] * 1e4), by = [[], [], [], []];
+  st.risk_ix.forEach((s, i) => { const p = st.risk_p[i], lv = p >= TH[0] ? 3 : p >= TH[1] ? 2 : 1; map.level[s] = lv; map.prob[s] = p; by[lv].push(s); });
+  map.paths.watch = segPath(by[1]); map.paths.medium = segPath(by[2]); map.paths.high = segPath(by[3]);
+  map.groups = { 1: [], 2: [], 3: [] };
+  for (const lv of [1, 2, 3]) for (let gi = 0; gi < 3; gi++) { const segs = by[lv].filter(s => SG[s] === gi); map.groups[lv][gi] = { p: segPath(segs), n: segs.length }; }
+  $("lvl").innerHTML = [["High risk", C.flood], ["Medium risk", C.warn], ["Low risk", C.watch]].map(([n, c], i) => `<div><b style="color:${c}">${st.counts[i].toLocaleString()}</b><span>${n}</span></div>`).join("");
+  computeRoute();
+}
+const compass = d => d == null ? "" : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(d / 45) % 8];
+async function loadLive() {
+  let L;
+  try { L = await getJSON("live.json"); } catch (e) { L = null; }
+  if (!L) {
+    $("headline").textContent = "Live data is not running";
+    $("summary").textContent = "Start the live app from the project folder with: python3 backend/app.py. It fetches the weather every 15 minutes. You can still look at past storms.";
+    $("facts").innerHTML = ""; $("now").style.display = "none"; return false;
+  }
+  $("now").style.display = ""; if (playing) play();
+  if (L.what_if) { L.risk_ix = []; L.risk_p = []; L.counts = [0, 0, 0]; }      // no storm on the way: every street clear (also for files from older versions)
+  LIVE = STORM = L; WB = liveBuckets(L); played = false; lastSig = ""; lastSlot = -1;
+  const w = L.weather, raining = (w.rain_now || 0) > 0 || L.rain15.some(r => r[2] && r[1] > 0);
+  $("headline").textContent = L.what_if ? "No flooding expected: streets are clear" : L.counts[0] > 150 || L.peak_1h_mm >= 10 ? "Flooding likely on some streets" : "Some streets may flood";
+  $("summary").textContent = `${L.now_local} in New York: ${w.desc.toLowerCase()}, ${w.temp} °C. ` + (L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours." : `About ${L.city_rain_mm} mm of rain is forecast over the next 24 hours, up to ${L.peak_1h_mm} mm in one hour.`);
+  facts([[w.temp + " °C", w.desc], [(w.rain_now ?? 0) + " mm", raining ? "rain in the last 15 minutes" : "no rain right now"], [L.city_rain_mm + " mm", "rain expected in the next 24 hours"], [L.what_if ? "–" : L.counts[0], "streets flagged high risk"]]);
+  $("live-banner").hidden = true;
+  $("now-lede").textContent = "Current conditions and forecast from the Open-Meteo weather service, updated every 15 minutes. Last update " + L.updated + ".";
+  $("wx-now").innerHTML = [[w.temp + " °C", "temperature"], [w.feels + " °C", "feels like"], [w.humidity + " %", "humidity"], [w.cloud + " %", "cloud cover"],
+    [`${w.wind} km/h ${compass(w.wind_dir)}`, "wind"], [w.gust + " km/h", "gusts"], [w.pressure + " hPa", "pressure"], [L.past12_mm + " mm", "rain in the last 12 hours"]]
+    .map(([v, l]) => `<div><b>${esc(v)}</b><span>${l}</span></div>`).join("");
+  const n24 = L.next24;
+  chart($("next24-chart"), { n: n24.rain.length, tick: 3, label: i => n24.time[i], minMax: 2, y2: true, series: [{ data: n24.rain, color: C.rain, bars: true }, { data: n24.prob, color: C.warn, width: 1.6, y2: true }] });
+  const q = L.rain15, cut = q.findIndex(r => !r[2]);
+  chart($("q15-chart"), { n: q.length, tick: 4, label: i => q[i][0], minMax: 1, mark: cut > 0 ? cut - 0.5 : null, series: [{ data: q.map(r => r[1]), color: C.rain, bars: true }] });
+  const G = { NYC: "Central Park", LGA: "LaGuardia", JFK: "JFK" }, times = [...new Set(Object.values(L.gauges).flatMap(a => a.map(r => r[0])))].sort().slice(-6);
+  $("gauge-table").innerHTML = times.length ? "<tr><th>Gauge</th>" + times.map(t => `<th class="n">${t}</th>`).join("") + "</tr>" +
+    Object.entries(L.gauges).map(([k, a]) => `<tr><td>${G[k] || k}</td>` + times.map(t => { const r = a.find(x => x[0] === t); return `<td class="n">${r && r[1] != null ? r[1] : "–"}</td>`; }).join("") + "</tr>").join("")
+    : "<tr><td>Gauge readings are not available right now.</td></tr>";
+  $("map-lede").textContent = L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours, so every street is shown clear. Streets light up here when a storm is on the way." : "The map shows the streets as they are now: clear unless rain is falling. Press play, or drag the slider, to see which streets the forecast rain would flood over the next 22 hours and how the safe route changes. Diamonds are flood sensors with the CNN-LSTM depth forecast.";
+  $("rep-note").textContent = L.what_if ? "No streets flagged." : `${L.expected_reports} streets are expected to get a flooding report.`;
+  paintStreets(L); drawTimeline(); setTime(NOW_SLOT); today(L); if (typeof heroLive === "function") heroLive(L); return true;
+}
+async function setMode(m) {
+  MODE = m; document.body.className = m;
+  document.querySelectorAll(".modes button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m));
+  history.replaceState(null, "", m === "past" ? "#" + $("storm").value : "#live");
+  if (m === "live") { await loadLive(); } else { await loadStorm($("storm").value); }
+}
+async function loadStorm(date) {
+  const st = STORM = PAST = await getJSON(`storm_${date}.json`), meta = INDEX.storms.find(s => s.date === date);
+  if (playing) play(); WB = buckets(st); played = false; lastSig = ""; lastSlot = -1;
+  $("map-lede").textContent = "Press play to watch the storm unfold. Streets light up as rain builds at the nearest gauge, riskiest streets first, and clear again as it drains. Diamonds are flood sensors with the chosen model's depth forecast. Set a start and destination to see the safe route change as streets flood.";
+  history.replaceState(null, "", "#" + date);
+  const flooded = st.sensors.filter(s => s.peak > 0), deep = Math.max(0, ...st.sensors.map(s => s.peak));
+  $("headline").textContent = fmtDate(date) + ": " + (deep >= 12 ? "streets under deep water" : deep >= 4 ? "flooding across the city" : deep > 0 ? "shallow street flooding" : "rain, no flooding at the sensors");
+  $("summary").textContent = `About ${meta.gauge_mm} mm of rain fell at the gauges, up to ${meta.peak5} mm in five minutes. ${flooded.length} of ${st.sensors.filter(s => s.observed).length} working flood sensors recorded water.`;
+  facts([[meta.gauge_mm + " mm", "rain at the gauges"], [meta.peak5 + " mm", "heaviest 5 minutes"], [deep + " in", "deepest water measured"], [st.counts[0], "streets flagged high risk"]]);
+
+  paintStreets(st);
+  if (typeof heroPast === "function") heroPast(st, meta);
+  $("rep-note").textContent = st.has_reports ? `Flooding was reported on ${st.reported.length} streets; ${st.reported_caught} of them were flagged. Turn on “Reported flooding” to see them.` : "No flooding reports are available for this date.";
+  $("b-rep").style.display = st.has_reports ? "" : "none";
+
+  // sensors + time
+  const withPred = st.sensors.filter(s => s.obs).sort((a, b) => b.peak - a.peak);
+  if (!withPred.some(s => s.id === sensorId)) sensorId = withPred.length ? withPred[0].id : null;
+  $("depth-body").style.display = withPred.length ? "" : "none";
+  $("depth-lede").textContent = withPred.length ? "The white line is the water the sensor measured. Each coloured line is a model's forecast, drawn at the time it was forecasting for: the closer the lines, the better the model."
+    : st.has_pred ? "No sensor recorded water on this day." : "Depth forecasts exist for July to October 2026. Pick a storm from those months.";
+  if (withPred.length) {
+    $("sensor").innerHTML = withPred.map(s => `<option value="${esc(s.id)}">${esc(s.name)} (peak ${s.peak} in)</option>`).join(""); $("sensor").value = sensorId;
+    if (st.storm_errors.length) table("storm-err", ["Model", "5 min", "20 min", "40 min"], st.storm_errors.filter(r => LIVE_MODELS.includes(r[0]) || modelsOn.has(r[0])).map(r => [nice(r[0]), ...r.slice(1)]), 2, true, st.storm_errors.filter(r => LIVE_MODELS.includes(r[0]) || modelsOn.has(r[0])).map(r => r[0]));
+    else $("storm-err").innerHTML = "<tr><td>Too few flooded readings to score the models.</td></tr>";
+  }
+  drawTimeline();
+  let peak = 0; for (let t = 0; t < 288; t++) if (floodedNow(t) > floodedNow(peak)) peak = t;
+  setTime(peak);
+
+  // weather + rain
+  const gs = Object.keys(GAUGE).filter(k => st.gauges[k]);
+  chart($("rain-chart"), { n: 288, tick: 36, label: slotLabel, minMax: 2, series: gs.map(k => ({ data: st.gauges[k], color: GAUGE[k][1], width: 1.6 })) });
+  $("rain-note").innerHTML = gs.map(k => { const v = st.gauges[k].map(x => x || 0); return `<span class="dot" style="background:${GAUGE[k][1]}"></span>${GAUGE[k][0]} ${v.reduce((a, b) => a + b, 0).toFixed(1)} mm`; }).join(" &nbsp; ") + ". Times are New York time.";
+  const w = WX && WX[date], mm = a => Math.min(...a).toFixed(0) + " to " + Math.max(...a).toFixed(0), avg = a => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(0);
+  $("wx-lede").textContent = w ? "Hourly weather for New York City that day, and rain measured every 5 minutes at three gauges." : "Rain measured every 5 minutes at three gauges. Temperature and wind appear here once the weather file is downloaded.";
+  table("wx-table", ["", ""], w ? [["Temperature", mm(w.temp) + " °C"], ["Humidity", avg(w.humidity) + " %"], ["Strongest wind", Math.max(...w.wind).toFixed(0) + " km/h"], ["Strongest gust", Math.max(...w.gust).toFixed(0) + " km/h"], ["Lowest pressure", Math.min(...w.pressure).toFixed(0) + " hPa"], ["Cloud cover", avg(w.cloud) + " %"], ["Rain (weather model)", st.city_rain_mm + " mm"]]
+    : [["Rain (weather model)", st.city_rain_mm + " mm"], ["Wettest hour", Math.max(0, ...st.hourly).toFixed(1) + " mm"], ["Hours with rain", st.hourly.filter(v => v >= 0.5).length]]);
+}
+function selectSensor(id) { sensorId = id; $("sensor").value = id; drawDepth(); draw(); }
+function drawDepth() {
+  const q = STORM.sensors.find(s => s.id === sensorId); if (!q || !q.obs) return;
+  let a = 288, b = 0; q.obs.forEach((v, i) => { if (v > 0) { a = Math.min(a, i); b = Math.max(b, i); } }); a = Math.max(0, a - 12); b = Math.min(287, b + 12);
+  const cut = arr => arr.slice(a, b + 1), n = b - a + 1;
+  $("depth-title").textContent = q.name.replace(/^[A-Z]{1,2} ?- ?/, "") + ": water depth in inches, forecast " + horizon + " minutes ahead";
+  const series = STORM.models.map((m, i) => modelsOn.has(m) ? { data: cut(q.pred[horizon][i]), color: STYLE[m][0], dash: STYLE[m][1], width: MINE.has(m) ? 2.2 : 1.6 } : null).filter(Boolean);
+  series.push({ data: cut(q.obs), color: C.ink, width: 2.8 });
+  $("depth-keys").innerHTML = `<span><i style="background:${C.ink}"></i>Measured</span>` + STORM.models.filter(m => modelsOn.has(m)).map(m => `<span><i style="background:${STYLE[m][0]}"></i>${esc(nice(m))}</span>`).join("");
+  let pk = 0; q.obs.forEach((v, i) => { if ((v || 0) > (q.obs[pk] || 0)) pk = i; });
+  const mi = STORM.models.indexOf("LSTM (standard)"), fpk = mi >= 0 ? q.pred[horizon][mi][pk] : null;
+  $("depth-say").innerHTML = `The water peaked at <b>${fmtIn(q.obs[pk])}</b> at ${slotLabel(pk)}.` + (fpk != null ? ` ${horizon} minutes earlier, the standard LSTM expected <b>${fmtIn(fpk)}</b>${Math.abs(fpk - q.obs[pk]) < 1 ? ", close to right" : fpk < q.obs[pk] ? ", too low" : ", too high"}.` : "");
+  chart($("depth-chart"), { n, tick: Math.max(1, Math.round(n / 7)), label: i => slotLabel(a + i), minMax: 1, mark: T + (+ahead) / 5 - a, series });
+}
+function r2Demo() {
+  const cv = $("r2-chart"), sl = $("r2-q"); if (!cv) return;
+  const n = 60, obs = Array.from({ length: n }, (_, i) => { const t = i / n; return Math.max(0, 9 * Math.exp(-((t - .42) ** 2) / .012) + 3 * Math.exp(-((t - .7) ** 2) / .006)); });
+  const mean = obs.reduce((a, b) => a + b, 0) / n, late = obs.map((_, i) => obs[Math.max(0, i - 6)] * 0.8);
+  const ssMean = obs.reduce((a, v) => a + (v - mean) ** 2, 0);
+  const upd = () => { const k = +sl.value / 100;                      // 1 = perfect, 0 = average, below 0 = worse (late, damped guess pushed further)
+    const fc = obs.map((v, i) => k >= 0 ? mean + (v - mean) * k + (late[i] - v) * (1 - k) * 0.5 * k : mean - (v - mean) * (-k) * 0.8);
+    const r2 = 1 - obs.reduce((a, v, i) => a + (v - fc[i]) ** 2, 0) / ssMean;
+    $("r2-val").textContent = r2.toFixed(2);
+    $("r2-say").textContent = r2 > 0.9 ? "Almost on top of the real curve. Our models reach this 5 minutes ahead." : r2 > 0.6 ? "Follows the rises and falls, with some misses." : r2 > 0.3 ? "Gets the shape of the flood but not its size, like our models 20 minutes ahead." : r2 > -0.05 ? "Barely better than always guessing the average depth." : "Worse than just guessing the average: the forecast is late or wrong-sized.";
+    chart(cv, { n, tick: 12, label: i => "+" + i * 5 + "m", minMax: 10, series: [{ data: obs.map(() => mean), color: C.soft, dash: [4, 4], width: 1.4 }, { data: fc.map(v => Math.max(0, v)), color: C.rain, width: 2.2 }, { data: obs, color: C.ink, width: 2.6 }] }); };
+  sl.oninput = upd; upd(); window.addEventListener("resize", upd);
+}
+async function init() {
+  try {
+    [INDEX, ROADS] = await Promise.all([getJSON("index.json"), getJSON("roads.json")]);
+    try { WX = await getJSON("weather.json"); } catch (e) { WX = null; }
+    GRAPH = buildGraph(ROADS); streetGauges(); initMap(); routeInfo(); buildNames();
+    $("route-form").onsubmit = searchRoute; $("swap").onclick = () => { const f = $("q-from").value; $("q-from").value = $("q-to").value; $("q-to").value = f; };
+    const sel = $("storm"), sorted = [...INDEX.storms].sort((a, b) => b.date.localeCompare(a.date));
+    sel.innerHTML = sorted.map(s => `<option value="${s.date}">${fmtDate(s.date)}: ${s.gauge_mm} mm, deepest ${s.deepest_in} in</option>`).join("");
+    const want = location.hash.slice(1), pick = INDEX.storms.some(s => s.date === want) ? want : (INDEX.storms.find(s => s.date === "2026-07-18") || sorted[0]).date;
+    sel.value = pick; sel.onchange = () => { history.replaceState(null, "", "#" + sel.value); loadStorm(sel.value); };
+    document.querySelectorAll(".modes button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+    const models = (await getJSON(`storm_${pick}.json`)).models;
+    $("model").innerHTML = LIVE_MODELS.filter(m => models.includes(m)).map(m => `<option value="${esc(m)}">${esc(nice(m))}</option>`).join(""); $("model").value = model;
+    $("model").onchange = e => { model = e.target.value; lastSlot = -1; setTime(T); };
+    $("ahead").onchange = e => { ahead = e.target.value; horizon = ahead; segSync(); lastSlot = -1; setTime(T); };
+    $("time").oninput = e => { if (playing) play(); setTime(+e.target.value); }; $("play").onclick = play;
+    $("sensor").onchange = e => selectSensor(e.target.value);
+    $("h-seg").innerHTML = ["5", "20", "40"].map(h => `<button data-h="${h}">${h} min ahead</button>`).join("");
+    const segSync = () => $("h-seg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.h === horizon));
+    $("h-seg").querySelectorAll("button").forEach(b => b.onclick = () => { horizon = ahead = b.dataset.h; $("ahead").value = ahead; segSync(); lastSlot = -1; setTime(T); }); segSync();
+    document.querySelectorAll("#ahead-seg button").forEach(b => b.onclick = () => { $("ahead").value = b.dataset.a; $("ahead").dispatchEvent(new Event("change")); });
+    table("t-rec", ["Model", "5 min", "20 min", "40 min"], [["Persistence (baseline)", "0.93", "0.44", "-0.10"], ["LSTM, all at once", "0.94", "0.52", "0.11"], ["Recursive ANN-LSTM", "0.95", "0.49", "-0.25"], ["Recursive XGBoost-LSTM", "0.95", "0.52", "-0.02"], ["Recursive + perfect rain (upper bound)", "0.95", "0.56", "0.10"]]);
+    r2Demo();
+    $("model-toggles").innerHTML = models.map(m => `<label><input type="checkbox" data-m="${esc(m)}" ${modelsOn.has(m) ? "checked" : ""}><i style="background:${STYLE[m][0]}"></i>${esc(nice(m))}</label>`).join("");
+    $("model-toggles").querySelectorAll("input").forEach(c => c.onchange = () => { c.checked ? modelsOn.add(c.dataset.m) : modelsOn.delete(c.dataset.m); drawDepth(); });
+    const R = INDEX.results, keepD = new Set(["Persistence", "XGBoost (no future rain)", "LSTM (standard)", ...MINE, "LSTM + perfect rain forecast", "CNN-LSTM + perfect rain forecast"]);
+    const dRows = R.depth.filter(r => keepD.has(r[0])).sort((a, b) => [...keepD].indexOf(a[0]) - [...keepD].indexOf(b[0]));
+    table("t-depth", ["Model", "R² 5 min", "R² 20 min", "R² 40 min", "Caught early"], dRows.map(r => [nice(r[0]), r[1].toFixed(2), r[2].toFixed(2), r[3].toFixed(2), r[7] + "%"]), 2, false, dRows.map(r => r[0]));
+    table("t-road", ["Model", "Top 1%", "Top 5%"], R.road.map(r => [r[0], r[1] + "%", r[2] + "%"]), 1);
+    await setMode(INDEX.storms.some(s => s.date === want) ? "past" : "live");
+    setInterval(() => { if (MODE === "live") loadLive(); }, 60000);
+    let rz = 0; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => setMode(MODE), 250); });
+  } catch (e) {
+    $("app").innerHTML = `<div class="err"><b>The dashboard data did not load.</b><br>Start it from the project folder with <code>python3 backend/app.py</code> and open http://localhost:8000. (${esc(e.message)})</div>`;
+  }
+}
+init();

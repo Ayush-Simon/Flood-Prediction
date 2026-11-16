@@ -1,0 +1,65 @@
+test windows 96181, flood-related 7028, storms with water 132
+
+1. Test results with 95% confidence intervals (resampling storms):
+                                                           R2 5 min          R2 20 min            R2 40 min            RMSE in   caught 40 min
+Persistence                                       0.93 [0.88, 0.96]  0.44 [0.13, 0.67]  -0.10 [-0.61, 0.30]  2.03 [1.53, 2.57]     0% [0%, 0%]
+Bucket (physics) + ANN rain                       0.93 [0.89, 0.95]  0.52 [0.32, 0.66]   0.16 [-0.06, 0.32]  1.83 [1.43, 2.27]  23% [16%, 31%]
+Bucket (physics) + perfect rain                   0.92 [0.88, 0.95]  0.53 [0.33, 0.65]    0.27 [0.07, 0.38]  1.77 [1.41, 2.13]  51% [40%, 61%]
+LSTM (standard)                                   0.94 [0.91, 0.96]  0.52 [0.29, 0.69]   0.11 [-0.22, 0.35]  1.86 [1.40, 2.33]     0% [0%, 0%]
+ANN-LSTM                                          0.93 [0.89, 0.96]  0.49 [0.24, 0.65]   0.05 [-0.26, 0.28]  1.92 [1.44, 2.40]     3% [1%, 5%]
+CNN-LSTM                                          0.93 [0.90, 0.95]  0.48 [0.26, 0.62]  -0.01 [-0.32, 0.20]  1.96 [1.48, 2.45]     1% [0%, 2%]
+CNN-LSTM + ANN rain                               0.90 [0.87, 0.92]  0.47 [0.27, 0.60]   0.07 [-0.15, 0.22]  1.93 [1.44, 2.40]     3% [1%, 6%]
+LSTM + perfect rain (upper bound)                 0.94 [0.90, 0.95]  0.53 [0.33, 0.64]    0.19 [0.05, 0.28]  1.81 [1.39, 2.24]  33% [24%, 43%]
+Physics-guided LSTM (bucket + ANN rain)           0.93 [0.90, 0.96]  0.48 [0.21, 0.66]   0.06 [-0.30, 0.32]  1.92 [1.47, 2.46]     2% [1%, 3%]
+Physics-guided LSTM + perfect rain (upper bound)  0.93 [0.89, 0.95]  0.50 [0.29, 0.65]   0.16 [-0.04, 0.30]  1.85 [1.36, 2.29]  28% [20%, 37%]
+
+2. Each model minus the standard LSTM (negative RMSE difference = better than LSTM):
+                                           model  RMSE_minus_LSTM     lo    hi  p_boot  R2_20_minus_LSTM  R2_lo  R2_hi storms_better  p_wilcoxon
+                                     Persistence            0.168  0.048 0.267   0.002            -0.077 -0.159 -0.010     37 of 132       0.000
+                     Bucket (physics) + ANN rain           -0.030 -0.118 0.060   0.560             0.006 -0.038  0.064     57 of 132       0.189
+                 Bucket (physics) + perfect rain           -0.087 -0.238 0.081   0.350             0.010 -0.067  0.094     50 of 132       0.012
+                                        ANN-LSTM            0.057  0.015 0.097   0.010            -0.027 -0.058  0.001     30 of 132       0.000
+                                        CNN-LSTM            0.097  0.023 0.210   0.000            -0.038 -0.070 -0.007     39 of 132       0.000
+                             CNN-LSTM + ANN rain            0.070 -0.050 0.230   0.330            -0.042 -0.103  0.031     37 of 132       0.000
+               LSTM + perfect rain (upper bound)           -0.047 -0.187 0.129   0.496             0.012 -0.048  0.086     61 of 132       0.710
+         Physics-guided LSTM (bucket + ANN rain)            0.057  0.023 0.093   0.000            -0.035 -0.067 -0.011     39 of 132       0.000
+Physics-guided LSTM + perfect rain (upper bound)           -0.014 -0.100 0.090   0.736            -0.011 -0.040  0.027     58 of 132       0.953
+
+RMSE of each training seed: {np.str_('LSTM (standard)'): [np.float32(1.926), np.float32(1.824), np.float32(1.895)], np.str_('ANN-LSTM'): [np.float32(1.972), np.float32(1.907), np.float32(1.915)], np.str_('CNN-LSTM'): [np.float32(2.026), np.float32(1.95), np.float32(1.987)], np.str_('CNN-LSTM + ANN rain'): [np.float32(2.019), np.float32(1.934), np.float32(2.002)], np.str_('LSTM + perfect rain (upper bound)'): [np.float32(1.901), np.float32(1.787), np.float32(1.788)], np.str_('Physics-guided LSTM (bucket + ANN rain)'): [np.float32(1.911), np.float32(1.978), np.float32(1.917)], np.str_('Physics-guided LSTM + perfect rain (upper bound)'): [np.float32(1.856), np.float32(1.977), np.float32(1.789)]}
+
+3. Sensor-to-gauge distance (km): min 3.9, median 8.9, max 24.7
+Gain in R² over the standard LSTM, by distance to the gauge [95% CI]:
+        group  sensors  storms                             model  R2_gain_20   lo20   hi20  R2_gain_40   lo40   hi40
+near (≤ 9 km)       13      61                          ANN-LSTM      -0.031 -0.060 -0.016      -0.071 -0.099 -0.027
+near (≤ 9 km)       13      61 LSTM + perfect rain (upper bound)      -0.022 -0.078  0.058      -0.008 -0.194  0.292
+near (≤ 9 km)       13      61       Bucket (physics) + ANN rain      -0.017 -0.052  0.049      -0.003 -0.081  0.116
+ far (> 9 km)       12      71                          ANN-LSTM      -0.019 -0.091  0.040      -0.020 -0.092  0.028
+ far (> 9 km)       12      71 LSTM + perfect rain (upper bound)       0.088 -0.026  0.154       0.280  0.032  0.401
+ far (> 9 km)       12      71       Bucket (physics) + ANN rain       0.059 -0.077  0.135       0.175 -0.062  0.287
+per sensor (21 sensors with water): Spearman distance vs gain, ANN rain 0.07 (p 0.75), perfect rain -0.17 (p 0.46)
+
+   (threshold tuned on half the storms, scored on the other half):
+                                           model threshold_in  hit_rate  false_alarm_ratio   CSI  median_lead_min  floods
+                                     Persistence     0.1/0.35     0.319              0.790 0.145             12.5    1066
+                     Bucket (physics) + ANN rain    0.75/0.75     0.413              0.916 0.075             15.0    1066
+                 Bucket (physics) + perfect rain          2/2     0.311              0.838 0.119             20.0    1066
+                                 LSTM (standard)     0.55/0.6     0.288              0.798 0.135             10.0    1066
+                                        ANN-LSTM     0.45/0.6     0.315              0.891 0.088             10.0    1066
+                                        CNN-LSTM     0.6/0.95     0.290              0.823 0.124             15.0    1066
+                             CNN-LSTM + ANN rain     0.75/0.8     0.234              0.871 0.091             10.0    1066
+               LSTM + perfect rain (upper bound)    0.85/0.65     0.361              0.777 0.160             15.0    1066
+         Physics-guided LSTM (bucket + ANN rain)      0.5/0.7     0.311              0.879 0.095             10.0    1066
+Physics-guided LSTM + perfect rain (upper bound)      0.8/0.7     0.324              0.756 0.162             15.0    1066
+   LSTM (standard) with the old 1-inch rule: hit rate 3%, false alarms 53%
+   ANN-LSTM with the old 1-inch rule: hit rate 7%, false alarms 89%
+   CNN-LSTM + ANN rain with the old 1-inch rule: hit rate 16%, false alarms 86%
+
+5. Rolling origin (R² on flood samples, one seed):
+minutes_ahead                                                 5     20    40
+test_window              model                                              
+2024-06-30 to 2024-12-31 LSTM (standard)                    0.87  0.64  0.37
+                         LSTM + perfect rain (upper bound)  0.87  0.62  0.36
+                         Persistence                        0.93  0.58  0.13
+2025-06-30 to 2025-12-31 LSTM (standard)                    0.92  0.55  0.10
+                         LSTM + perfect rain (upper bound)  0.89  0.45  0.08
+                         Persistence                        0.92  0.38 -0.36
