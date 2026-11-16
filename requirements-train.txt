@@ -1,0 +1,10 @@
+# Re-run the experiments in scripts/ (training, statistics, street model):
+#   pip install -r requirements-train.txt
+-r requirements.txt
+torch>=2.2
+scikit-learn>=1.4
+scipy>=1.11
+statsmodels>=0.14
+geopandas>=0.14
+shapely>=2.0
+pyogrio>=0.7

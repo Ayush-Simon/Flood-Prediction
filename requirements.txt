@@ -1,0 +1,7 @@
+# Run the website (backend/app.py, build_store.py, updater.py):
+#   pip install -r requirements.txt
+numpy>=1.26
+pandas>=2.1
+requests>=2.31
+xgboost>=2.0
+matplotlib>=3.8
