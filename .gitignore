@@ -24,3 +24,6 @@ data/processed/nyc_storm_windows.csv
 data/processed/nyc_street_features.csv
 data/processed/nyc_streets.csv
 data/processed/nyc_street_risk_scenarios.csv
+
+# the static website built by backend/build_static.py (deployed by GitHub Actions, never committed)
+site/

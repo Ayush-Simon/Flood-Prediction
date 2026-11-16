@@ -6,16 +6,16 @@
 <title>Model Lab · NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/lab.css">
+<link rel="stylesheet" href="css/style.css?v=6">
+<link rel="stylesheet" href="css/lab.css?v=6">
 </head>
 <body class="live lab">
 <canvas id="sky" aria-hidden="true"></canvas>
 <nav class="rail" aria-label="Pages">
   <svg class="logo" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 13c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/><path d="M6 20c4-4 8-4 12 0s8 4 12 0"/><path d="M6 27c4-4 8-4 12 0s8 4 12 0 4-2 4-2"/></svg>
-  <a href="index.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg><span>Flood Watch</span></a>
-  <a href="index.html#prediction"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg><span>Flood map</span></a>
-  <a href="lab.html" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span>Model Lab</span></a>
+  <a href="index.html" aria-label="Flood Watch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg><span>Flood Watch</span></a>
+  <a href="index.html#prediction" aria-label="Flood map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg><span>Flood map</span></a>
+  <a href="lab.html" class="on" aria-label="Model Lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span>Model Lab</span></a>
   <div class="grow"></div>
 </nav>
 
@@ -108,8 +108,9 @@
 
   <footer>The models were trained on New York FloodNet sensors and airport rain gauges (2021–2025) and tested on July–October 2026. On other places or rain sources they may be less accurate. Runs entirely in your browser; nothing you paste is uploaded.</footer>
 </main>
-<script src="js/sky.js" defer></script>
-<script src="js/models.js" defer></script>
-<script src="js/lab.js" defer></script>
+<script src="js/sky.js?v=6" defer></script>
+<script src="js/models.js?v=6" defer></script>
+<script src="js/lab.js?v=6" defer></script>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden><i aria-hidden="true">✓</i><div><b></b><span></span></div></div>
 </body>
 </html>

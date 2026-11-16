@@ -30,7 +30,10 @@ function chart(cv, o) {
   const X = i => L + (W - L - R) * (n > 1 ? i / (n - 1) : 0), Y = v => T + (H - T - B) * (1 - v / max), Y2 = v => T + (H - T - B) * (1 - v / 100);
   g.font = "11px " + BODY; g.fillStyle = C.soft; g.strokeStyle = C.line; g.lineWidth = 1;
   for (let k = 0; k <= 4; k++) { const v = max * k / 4, y = Y(v); g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.textAlign = "right"; g.fillText(v.toFixed(max < 5 ? 1 : 0), L - 6, y + 4); if (o.y2) { g.textAlign = "left"; g.fillText(25 * k, W - R + 6, y + 4); } }
-  g.textAlign = "center"; for (let i = 0; i < n; i += o.tick) g.fillText(o.label(i), X(i), H - 6);
+  g.textAlign = "center";   // keep labels apart on narrow screens: widen the step until each label has about 46 px
+  { const room = Math.max(1, Math.floor((X(n - 1) - X(0)) / 46)), tk = Math.max(o.tick, Math.ceil((n - 1) / room / o.tick) * o.tick);
+    for (let i = 0; i < n; i += tk) { const x = X(i), s = o.label(i), w = g.measureText(s).width;
+      g.fillText(s, Math.min(Math.max(x, w / 2 + 1), W - w / 2 - 1), H - 6); } }
   if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = "rgba(255,255,255,.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
   for (const s of o.series) {
     const yy = s.y2 ? Y2 : Y;
@@ -174,6 +177,51 @@ function forecastAt(q, t) {
   return { f: q.pred[ahead][k][tgt], a: q.obs[tgt], now: q.obs[t] };
 }
 function sensorColor(v) { return v == null ? "#2a3a44" : v >= 4 ? C.flood : v > 0.5 ? C.warn : "#1d2c35"; }
+
+/* ---------------------------------------------------------------- satellite photos under the map
+   Esri World Imagery tiles (Web Mercator, 256 px). Each tile is placed by its exact corner longitude and latitude
+   in the map's own coordinates, so the photos line up with the streets. If the tiles cannot load (no internet),
+   the map falls back to the plain street drawing. */
+const SAT = { cache: new Map(), ok: false, fails: 0, raf: 0,
+  url: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}` };
+const tileLon = (x, z) => x / 2 ** z * 360 - 180;
+const tileLat = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
+const lonTile = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
+const latTile = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
+const geoX = lon => (lon - ROADS.lon0) * ROADS.q * KX, geoY = lat => -(lat - ROADS.lat0) * ROADS.q;   // same projection as segPath
+function satTile(z, x, y) {
+  const k = `${z}/${x}/${y}`; let t = SAT.cache.get(k);
+  if (t) { SAT.cache.delete(k); SAT.cache.set(k, t); return t; }          // keep the most recently used last
+  t = { img: new Image(), ready: false };
+  t.img.referrerPolicy = "no-referrer"; t.img.decoding = "async";
+  t.img.onload = () => { t.ready = true; const first = !SAT.ok; SAT.ok = true; if (first) $("attrib").hidden = false; satRedraw(); };
+  t.img.onerror = () => { SAT.fails++; SAT.cache.delete(k); };
+  t.img.src = SAT.url(z, x, y);
+  SAT.cache.set(k, t);
+  if (SAT.cache.size > 700) SAT.cache.delete(SAT.cache.keys().next().value);
+  return t;
+}
+function satRedraw() { if (!SAT.raf) SAT.raf = requestAnimationFrame(() => { SAT.raf = 0; map.baseKey = null; draw(); }); }
+function drawSat(bg, d) {
+  const W = map.cv.clientWidth, H = map.cv.clientHeight, s = map.s;
+  const lonAt = px => (px - map.ox) / s / KX / ROADS.q + ROADS.lon0, latAt = py => -(py - map.oy) / s / ROADS.q + ROADS.lat0;
+  const w = Math.max(-179, lonAt(0)), e = Math.min(179, lonAt(W)), sLat = Math.max(-80, latAt(H)), nLat = Math.min(80, latAt(0));
+  // the tile zoom whose pixels best match the screen's pixels, capped so a view never needs more than about 160 tiles
+  let z = Math.round(Math.log2(156543.034 * Math.cos((sLat + nLat) / 2 * Math.PI / 180) * s * d / M_PER) - 0.25);
+  z = Math.max(3, Math.min(19, z));
+  while (z > 3 && (lonTile(e, z) - lonTile(w, z) + 1) * (latTile(sLat, z) - latTile(nLat, z) + 1) > 160) z--;
+  const pad = 0.6 / (s * d);                                                // a hair of overlap hides seams between tiles
+  for (let ty = latTile(nLat, z); ty <= latTile(sLat, z); ty++) for (let tx = lonTile(w, z); tx <= lonTile(e, z); tx++) {
+    const X0 = geoX(tileLon(tx, z)), X1 = geoX(tileLon(tx + 1, z)), Y0 = geoY(tileLat(ty, z)), Y1 = geoY(tileLat(ty + 1, z));
+    const t = satTile(z, tx, ty);
+    if (t.ready) { bg.drawImage(t.img, X0 - pad, Y0 - pad, X1 - X0 + 2 * pad, Y1 - Y0 + 2 * pad); continue; }
+    for (let up = 1; up <= 5; up++) {                                       // until it arrives, stretch a coarser tile already in memory
+      const p = SAT.cache.get(`${z - up}/${tx >> up}/${ty >> up}`);
+      if (p && p.ready) { const n = 2 ** up, c = 256 / n;
+        bg.drawImage(p.img, (tx % n) * c, (ty % n) * c, c, c, X0 - pad, Y0 - pad, X1 - X0 + 2 * pad, Y1 - Y0 + 2 * pad); break; }
+    }
+  }
+}
 function draw() {
   const g = map.g, d = window.devicePixelRatio || 1, s = map.s; if (!g || !ROADS) return;
   const px = w => w / s, z = Math.min(1, Math.max(0, (s - 0.01) / 0.05));
@@ -184,9 +232,15 @@ function draw() {
     if (b.width !== map.cv.width || b.height !== map.cv.height) { b.width = map.cv.width; b.height = map.cv.height; }
     bg.setTransform(1, 0, 0, 1, 0, 0); bg.clearRect(0, 0, b.width, b.height); bg.fillStyle = "rgba(8,15,20,.78)"; bg.fillRect(0, 0, b.width, b.height);
     bg.setTransform(d * s, 0, 0, d * s, d * map.ox, d * map.oy); bg.lineCap = "round"; bg.lineJoin = "round";
-    bg.strokeStyle = "#24343e"; bg.lineWidth = px(0.6 + 2.6 * z); bg.stroke(map.paths.streets);
-    bg.strokeStyle = "#5a6e7a"; bg.lineWidth = px(1.3 + 3.2 * z); bg.stroke(map.paths.major);
-    if (z > 0.35) { bg.strokeStyle = "#3a4f5b"; bg.lineWidth = px(0.4 + 1.6 * z); bg.stroke(map.paths.streets); }
+    drawSat(bg, d);
+    if (SAT.ok) {                                                           // satellite photos: a light shade so the flood colours stand out
+      bg.setTransform(1, 0, 0, 1, 0, 0); bg.fillStyle = "rgba(6,12,16,.22)"; bg.fillRect(0, 0, b.width, b.height);
+      bg.setTransform(d * s, 0, 0, d * s, d * map.ox, d * map.oy);
+    } else {                                                                // no internet: the plain street drawing
+      bg.strokeStyle = "#24343e"; bg.lineWidth = px(0.6 + 2.6 * z); bg.stroke(map.paths.streets);
+      bg.strokeStyle = "#5a6e7a"; bg.lineWidth = px(1.3 + 3.2 * z); bg.stroke(map.paths.major);
+      if (z > 0.35) { bg.strokeStyle = "#3a4f5b"; bg.lineWidth = px(0.4 + 1.6 * z); bg.stroke(map.paths.streets); }
+    }
     map.baseKey = key;
   }
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, map.cv.width, map.cv.height); g.drawImage(map.base, 0, 0);
@@ -365,7 +419,7 @@ function today(L) {
   const rain40 = sens.length ? sens.reduce((a, s) => a + (s.rain_fc || []).reduce((x, y) => x + y, 0), 0) / sens.length : 0;
   const run = L.model_run;
   $("today-lede").textContent = `Worked out by the models at ${L.now_local} (New York time) from the rain forecast for the next 24 hours` +
-    (run ? `: the road model scored ${run.road_streets.toLocaleString()} streets and the CNN-LSTM forecast ${run.depth_sensors} sensors in ${run.seconds} s` : "") + ". It is recalculated every 15 minutes, so these numbers follow the weather.";
+    (run ? `: the road model scored ${run.road_streets.toLocaleString()} streets and the CNN-LSTM forecast ${run.depth_sensors} sensors in ${run.seconds} s` : "") + `. It is recalculated every ${L.refresh_minutes || 15} minutes, so these numbers follow the weather.`;
   $("today-facts").innerHTML = [[L.city_rain_mm + " mm", "rain forecast, next 24 hours"], [L.peak_1h_mm + " mm", "in the wettest hour"],
     [dry ? "0" : L.counts[0].toLocaleString(), "streets at high flood risk" + (dry ? "" : `, ${L.counts[1].toLocaleString()} medium`)],
     [rain40.toFixed(1) + " mm", "rain the ANN expects in the next 40 minutes"]].map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join("");
@@ -394,7 +448,7 @@ function today(L) {
 // all data comes from the backend API (backend/server.py), never from files in the frontend
 const API = f => f.startsWith("storm_") ? "api/storm/" + f.slice(6, 16) : "api/" + f.split(".")[0];
 const getJSON = async f => { const r = await fetch(API(f), { headers: { Accept: "application/json" }, cache: "no-store" }); if (!r.ok) throw new Error(f + " " + r.status); return r.json(); };
-function facts(items) { $("facts").innerHTML = items.map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join(""); }
+function facts(items) { $("facts").innerHTML = items.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join(""); }
 function table(el, head, rows, bestCol, lowBest, mineCol) {
   let bi = -1; if (bestCol != null) { let bv = lowBest ? Infinity : -Infinity; rows.forEach((r, i) => { if (String(r[0]).includes("upper bound")) return; const v = parseFloat(r[bestCol]); if (lowBest ? v < bv : v > bv) { bv = v; bi = i; } }); }
   $(el).innerHTML = "<tr>" + head.map((h, i) => `<th class="${i ? "n" : ""}">${esc(h)}</th>`).join("") + "</tr>" +
@@ -412,6 +466,7 @@ function paintStreets(st) {
   $("lvl").innerHTML = [["High risk", C.flood], ["Medium risk", C.warn], ["Low risk", C.watch]].map(([n, c], i) => `<div><b style="color:${c}">${st.counts[i].toLocaleString()}</b><span>${n}</span></div>`).join("");
   computeRoute();
 }
+const val = (v, u) => v == null || Number.isNaN(+v) ? "–" : v + u;   // a value the weather service left out shows as a dash
 const compass = d => d == null ? "" : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(d / 45) % 8];
 async function loadLive() {
   let L;
@@ -426,20 +481,29 @@ async function loadLive() {
   LIVE = STORM = L; WB = liveBuckets(L); played = false; lastSig = ""; lastSlot = -1;
   const w = L.weather, raining = (w.rain_now || 0) > 0 || L.rain15.some(r => r[2] && r[1] > 0);
   $("headline").textContent = L.what_if ? "No flooding expected: streets are clear" : L.counts[0] > 150 || L.peak_1h_mm >= 10 ? "Flooding likely on some streets" : "Some streets may flood";
-  $("summary").textContent = `${L.now_local} in New York: ${w.desc.toLowerCase()}, ${w.temp} °C. ` + (L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours." : `About ${L.city_rain_mm} mm of rain is forecast over the next 24 hours, up to ${L.peak_1h_mm} mm in one hour.`);
-  facts([[w.temp + " °C", w.desc], [(w.rain_now ?? 0) + " mm", raining ? "rain in the last 15 minutes" : "no rain right now"], [L.city_rain_mm + " mm", "rain expected in the next 24 hours"], [L.what_if ? "–" : L.counts[0], "streets flagged high risk"]]);
-  $("live-banner").hidden = true;
-  $("now-lede").textContent = "Current conditions and forecast from the Open-Meteo weather service, updated every 15 minutes. Last update " + L.updated + ".";
-  $("wx-now").innerHTML = [[w.temp + " °C", "temperature"], [w.feels + " °C", "feels like"], [w.humidity + " %", "humidity"], [w.cloud + " %", "cloud cover"],
-    [`${w.wind} km/h ${compass(w.wind_dir)}`, "wind"], [w.gust + " km/h", "gusts"], [w.pressure + " hPa", "pressure"], [L.past12_mm + " mm", "rain in the last 12 hours"]]
+  $("summary").textContent = `${L.now_local} in New York: ${(w.desc || "weather unavailable").toLowerCase()}, ${val(w.temp, " °C")}. ` + (L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours." : `About ${L.city_rain_mm} mm of rain is forecast over the next 24 hours, up to ${L.peak_1h_mm} mm in one hour.`);
+  facts([[val(w.temp, " °C"), w.desc || "weather unavailable"], [(w.rain_now ?? 0) + " mm", raining ? "rain in the last 15 minutes" : "no rain right now"], [L.city_rain_mm + " mm", "rain expected in the next 24 hours"], [L.what_if ? "–" : L.counts[0], "streets flagged high risk"]]);
+  // say so plainly if the live forecast is old (the updater stopped, or the laptop slept)
+  const age = (Date.now() - Date.parse((L.updated || "").replace(" UTC", "Z").replace(" ", "T"))) / 60000;
+  const every = L.refresh_minutes || 15;                     // 15 on your own computer, 30 on the hosted site
+  if (age > every * 2 + 15) {
+    const ago = age < 120 ? `${Math.round(age)} minutes` : age < 2880 ? `${Math.round(age / 60)} hours` : `${Math.round(age / 1440)} days`;
+    $("live-banner").textContent = `This live forecast is ${ago} old: the updater has not run since ${L.updated}. ` + (L.host === "static"
+      ? `The hosted site is normally refreshed every ${every} minutes, so the scheduled update is late or failed.`
+      : "Start it with python3 backend/app.py; it refreshes every 15 minutes.");
+    $("live-banner").hidden = false;
+  } else $("live-banner").hidden = true;
+  $("now-lede").textContent = `Current conditions and forecast from the Open-Meteo weather service, updated every ${L.refresh_minutes || 15} minutes. Last update ${L.updated}.`;
+  $("wx-now").innerHTML = [[val(w.temp, " °C"), "temperature"], [val(w.feels, " °C"), "feels like"], [val(w.humidity, " %"), "humidity"], [val(w.cloud, " %"), "cloud cover"],
+    [`${val(w.wind, " km/h")} ${compass(w.wind_dir)}`, "wind"], [val(w.gust, " km/h"), "gusts"], [val(w.pressure, " hPa"), "pressure"], [L.past12_mm + " mm", "rain in the last 12 hours"]]
     .map(([v, l]) => `<div><b>${esc(v)}</b><span>${l}</span></div>`).join("");
   const n24 = L.next24;
   chart($("next24-chart"), { n: n24.rain.length, tick: 3, label: i => n24.time[i], minMax: 2, y2: true, series: [{ data: n24.rain, color: C.rain, bars: true }, { data: n24.prob, color: C.warn, width: 1.6, y2: true }] });
   const q = L.rain15, cut = q.findIndex(r => !r[2]);
   chart($("q15-chart"), { n: q.length, tick: 4, label: i => q[i][0], minMax: 1, mark: cut > 0 ? cut - 0.5 : null, series: [{ data: q.map(r => r[1]), color: C.rain, bars: true }] });
   const G = { NYC: "Central Park", LGA: "LaGuardia", JFK: "JFK" }, times = [...new Set(Object.values(L.gauges).flatMap(a => a.map(r => r[0])))].sort().slice(-6);
-  $("gauge-table").innerHTML = times.length ? "<tr><th>Gauge</th>" + times.map(t => `<th class="n">${t}</th>`).join("") + "</tr>" +
-    Object.entries(L.gauges).map(([k, a]) => `<tr><td>${G[k] || k}</td>` + times.map(t => { const r = a.find(x => x[0] === t); return `<td class="n">${r && r[1] != null ? r[1] : "–"}</td>`; }).join("") + "</tr>").join("")
+  $("gauge-table").innerHTML = times.length ? "<tr><th>Gauge</th>" + times.map(t => `<th class="n">${esc(t)}</th>`).join("") + "</tr>" +
+    Object.entries(L.gauges).map(([k, a]) => `<tr><td>${esc(G[k] || k)}</td>` + times.map(t => { const r = a.find(x => x[0] === t); return `<td class="n">${r && r[1] != null ? esc(r[1]) : "–"}</td>`; }).join("") + "</tr>").join("")
     : "<tr><td>Gauge readings are not available right now.</td></tr>";
   $("map-lede").textContent = L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours, so every street is shown clear. Streets light up here when a storm is on the way." : "The map shows the streets as they are now: clear unless rain is falling. Press play, or drag the slider, to see which streets the forecast rain would flood over the next 22 hours and how the safe route changes. Diamonds are flood sensors with the CNN-LSTM depth forecast.";
   $("rep-note").textContent = L.what_if ? "No streets flagged." : `${L.expected_reports} streets are expected to get a flooding report.`;

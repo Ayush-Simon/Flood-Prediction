@@ -38,6 +38,23 @@ Open http://localhost:8000. Use **Past storms** in the header to replay 2026 sto
 Without live weather: `python3 backend/app.py --no-live`.
 Record of the live run for the report: `python3 backend/export_history.py --days 3`.
 
+## Hosting on Vercel (live forecast every 30 minutes)
+
+Vercel only serves files, so a GitHub Action does the live work and deploys the result:
+`.github/workflows/deploy.yml` runs every 30 minutes (and on every push to `main`). It builds the data store,
+runs one live update, writes the site as plain files with `backend/build_static.py`, and deploys `site/` to Vercel.
+Nothing is committed back, so the repository stays small. Past storms and the Model Lab work the same as locally;
+the live forecast refreshes every 30 minutes instead of 15, and the page says so if an update is late.
+
+One-time setup:
+1. Create a free Vercel account and a token at https://vercel.com/account/tokens.
+2. In the GitHub repo: Settings > Secrets and variables > Actions > New repository secret: `VERCEL_TOKEN`.
+3. Actions tab > "Live forecast and deploy" > Run workflow. The run summary shows the site's address.
+4. Add that address as a repository variable `SITE_URL` (same settings page, Variables tab), so later runs
+   keep the 30-day history and reuse the last forecast if a live update fails.
+
+Build the static site locally: `python3 backend/build_static.py` (add `--update` for a fresh live forecast).
+
 ## Folder structure
 
 | Folder | Contents |

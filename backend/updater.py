@@ -100,6 +100,32 @@ def gauge_rain():
         print("Gauge rain unavailable:", e); return {}
 
 
+
+# ------------------------------------------------------------------ clean data from outside before it is stored
+_BAD = str.maketrans({c: "" for c in '<>"`&'})
+def clean(x, depth=0):
+    """Every live update passes through here before it is saved: numbers must be real and of sane size, text is
+    short and has no characters that could be read as HTML. So a broken or tampered weather reply can only show
+    as a missing value on the site, never as page content."""
+    if depth > 12:
+        return None
+    if isinstance(x, bool) or x is None:
+        return x
+    if isinstance(x, (int, float, np.integer, np.floating)):
+        v = float(x)
+        if not np.isfinite(v) or abs(v) > 1e7:
+            return None
+        return int(x) if isinstance(x, (int, np.integer)) else v
+    if isinstance(x, str):
+        return x.translate(_BAD)[:200]
+    if isinstance(x, dict):
+        return {clean(k, depth + 1) if isinstance(k, str) else k: clean(v, depth + 1) for k, v in list(x.items())[:20000]}
+    if isinstance(x, (list, tuple)):
+        return [clean(v, depth + 1) for v in list(x)[:200000]]
+    if isinstance(x, np.ndarray):
+        return clean(x.tolist(), depth + 1)
+    return None
+
 def build():
     t0 = time.time()
     data = open_meteo(); now = pd.Timestamp.now(tz=NY).tz_localize(None)
@@ -177,7 +203,7 @@ def build():
     con = store.connect_rw()
     try:
         with con:
-            store.add_live(con, out)
+            store.add_live(con, clean(out))
     finally:
         con.close()
     top = max((max(s["fc"]) for s in sens), default=0.0)

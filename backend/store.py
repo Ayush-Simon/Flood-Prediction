@@ -53,7 +53,10 @@ def connect_rw():
     try:
         os.makedirs(DIR, mode=0o700, exist_ok=True)
         con = sqlite3.connect(DB, timeout=15)
-        con.execute("PRAGMA journal_mode=WAL")
+        try:
+            con.execute("PRAGMA journal_mode=WAL")       # lets the server read while the updater writes
+        except sqlite3.OperationalError:                 # some shared/network drives do not support WAL
+            con.execute("PRAGMA journal_mode=DELETE")
         con.execute("PRAGMA foreign_keys=ON")
         con.executescript(SCHEMA)
     finally:
@@ -88,7 +91,7 @@ def add_live(con, live):
     """save a live update as the current one and add it to the history"""
     put(con, "live", live)
     body, sha, _ = _pack(live)
-    deepest = max((max(s["fc"]) for s in live.get("sensors", []) if s.get("fc")), default=0.0)
+    deepest = max((max(v for v in s["fc"] if v is not None) for s in live.get("sensors", []) if any(v is not None for v in s.get("fc") or [])), default=0.0)
     con.execute("INSERT OR REPLACE INTO live_history VALUES (?,?,?,?,?,?,?)",
                 (_now(), live.get("city_rain_mm"), live.get("peak_1h_mm"), (live.get("counts") or [0])[0], round(deepest, 2), body, sha))
     cut = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")

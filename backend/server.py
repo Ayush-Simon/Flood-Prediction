@@ -17,7 +17,7 @@ Security
   - the database is opened read-only; the website can only ask for named datasets
   - static files: only from frontend/, only known file types, no hidden files, no '..' tricks
   - strict browser security headers (Content-Security-Policy and others), no cross-site access
-  - each address may make at most 300 requests a minute
+  - each address may make at most 300 requests a minute; slow or oversized requests are dropped
   - errors never show file paths or stack traces
 """
 import gzip, hmac, json, os, re, secrets, threading, time
@@ -34,9 +34,10 @@ STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=
                 ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8"}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NAMED = {"index", "roads", "live", "weather", "lab_samples"}
+OPTIONAL = {"weather"}                      # may be missing from the store; the site works without it
 MODEL = re.compile(r"^[a-z_]{1,32}$")
 RATE, WINDOW = 300, 60
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://server.arcgisonline.com; font-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP, "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
@@ -69,6 +70,9 @@ class Limiter:
     def allow(self, ip):
         now = time.monotonic()
         with self.lock:
+            if len(self.hits) > 5000:                    # forget addresses that have gone quiet, so memory stays small
+                for k in [k for k, v in self.hits.items() if not v or now - v[-1] > WINDOW]:
+                    del self.hits[k]
             q = self.hits[ip]
             while q and now - q[0] > WINDOW:
                 q.popleft()
@@ -84,6 +88,7 @@ def make_handler(refresh=None):
     class Handler(BaseHTTPRequestHandler):
         server_version, sys_version = "FloodWatch", ""
         protocol_version = "HTTP/1.1"
+        timeout = 20                                # drop connections that send too slowly (slow-request attacks)
 
         def log_message(self, *a):                  # quiet: no request log on the console
             pass
@@ -107,8 +112,17 @@ def make_handler(refresh=None):
         def error(self, code, msg):
             self.send(code, json.dumps({"error": msg}).encode())
 
+        def send_error(self, code, message=None, explain=None):
+            """Python's own error page (bad request line, unknown method) is replaced by the same short JSON
+            answer as every other error, with the security headers and without the server's details."""
+            self.close_connection = True
+            try:
+                self.error(code, "method not allowed" if code in (405, 501) else "bad request" if code < 500 else "server error")
+            except Exception:
+                pass
+
         def guard(self):
-            if len(self.path) > 2048:
+            if len(self.path) > 2048 or len(self.headers) > 60:
                 self.error(414, "address too long"); return False
             if not limiter.allow(self.client_address[0]):
                 self.error(429, "too many requests, slow down"); return False
@@ -128,14 +142,22 @@ def make_handler(refresh=None):
                 self.error(500, "stored data failed its integrity check; rebuild the store")
             except FileNotFoundError:
                 self.error(503, "the data store is empty; run python3 backend/build_store.py")
-            except Exception:
-                self.error(500, "internal error")
+            except (BrokenPipeError, ConnectionResetError):
+                pass                                        # the browser went away; nothing to answer
+            except Exception:                               # anything unexpected: a short answer, never a stack trace
+                self.close_connection = True
+                self.error(500, "server error")
 
         do_HEAD = do_GET
 
         def do_POST(self):
             if not self.guard():
                 return
+            n = self.headers.get("Content-Length", "0")
+            if not n.isdigit() or int(n) > 1024:          # the refresh call has no body; refuse anything large
+                self.close_connection = True
+                return self.error(413, "request body too large")
+            self.rfile.read(int(n))                        # read it so the next request on this connection lines up
             if urlsplit(self.path).path != "/api/refresh":
                 return self.error(405, "method not allowed")
             auth = self.headers.get("Authorization", "")
@@ -147,8 +169,10 @@ def make_handler(refresh=None):
             ok = refresh()
             self.error(200 if ok else 500, "updated" if ok else "update failed, kept the last one")
 
-        def do_PUT(self): self.error(405, "method not allowed")
-        do_DELETE = do_PATCH = do_OPTIONS = do_PUT
+        def do_PUT(self):
+            self.close_connection = True                 # any body is not read, so do not reuse the connection
+            self.error(405, "method not allowed")
+        do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = do_PUT
 
         # ---------------------------------------------------------- data
         def api(self, url):
@@ -172,6 +196,8 @@ def make_handler(refresh=None):
                 else:
                     return self.error(404, "no such dataset")
                 body = store.get_gz(con, name)
+                if body is None and name in OPTIONAL:          # optional extras: "nothing here" is a normal answer
+                    return self.send(200, b"null", cache="private, max-age=300")
                 if body is None:
                     return self.error(404, "no such dataset")
                 self.send(200, body, gz=True, cache="no-store" if name == "live" else "private, max-age=300")

@@ -85,7 +85,7 @@ function heroLive(L) {
   // weather card
   const rainNow = w.rain_now || 0;
   $("now-card").innerHTML = `<div class="where">${icon("pin")}New York City</div>
-    <div class="big">${Math.round(w.temp)}°C</div><div class="desc">${esc(w.desc)}${w.feels == null ? "" : ", feels like " + Math.round(w.feels) + "°"}</div>
+    <div class="big">${w.temp == null ? "–" : Math.round(w.temp) + "°C"}</div><div class="desc">${esc(w.desc || "Weather unavailable")}${w.feels == null ? "" : ", feels like " + Math.round(w.feels) + "°"}</div>
     <div class="row"><span>${icon("wind")}${w.wind == null ? "–" : Math.round(w.wind) + " km/h"}</span><span>${icon("drop")}${w.humidity == null ? "–" : w.humidity + "%"}</span><span>${icon("rain")}${rainNow} mm</span></div>`;
   boroCards(L.boro, dry);
   // sky mood: cloud cover and the coming rain set how dark; rain falling now sets the rain
@@ -101,7 +101,7 @@ function heroPast(st, meta) {
   for (let i = 0; i < 8; i++) {
     const mm = h.slice(i * 3, i * 3 + 3).reduce((a, b) => a + b, 0);
     if (mm > best) { best = mm; peak = i; }
-    cells.push(`${mm === 0 ? 0 : mm < 10 ? mm.toFixed(1) : Math.round(mm)}<small>mm</small>${icon(kindOf(mm, 0, mm >= 10))}`); labels.push(hhmm(i * 180));
+    cells.push(`${mm < 0.05 ? 0 : mm < 10 ? mm.toFixed(1) : Math.round(mm)}<small>mm</small>${icon(kindOf(mm, 0, mm >= 10))}`); labels.push(hhmm(i * 180));
   }
   hourStrip(cells, labels, peak, true);
   drawWave(h, h.indexOf(Math.max(...h)));

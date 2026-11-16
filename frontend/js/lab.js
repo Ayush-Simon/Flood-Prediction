@@ -21,7 +21,9 @@ function chart(cv, o) {
     g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText((mx * (1 - k / 4)).toFixed(mx <= 1 ? 2 : mx < 5 ? 1 : 0), L - 6, y + 4);
     if (o.bars) { g.textAlign = "left"; g.fillText((bm * (1 - k / 4)).toFixed(1), W - R + 6, y + 4); } }
   g.textAlign = "left"; g.fillText(o.unit ?? "in", 4, 10); if (o.bars) { g.textAlign = "right"; g.fillText("mm", W - 2, 12); }
-  g.textAlign = "center"; const step = Math.max(1, Math.round(n / 8)); for (let i = 0; i < n; i += step) g.fillText(o.label(i), X(i), H - 8);
+  g.textAlign = "center";   // about one label per 52 px, kept inside the canvas
+  const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - L - R) / 52))));
+  for (let i = 0; i < n; i += step) { const s = o.label(i), w = g.measureText(s).width; g.fillText(s, Math.min(Math.max(X(i), w / 2 + 1), W - w / 2 - 1), H - 8); }
   if (o.shade) { g.fillStyle = "rgba(255,255,255,.07)"; g.fillRect(X(o.shade[0]), T, X(o.shade[1]) - X(o.shade[0]), H - T - B);
     g.strokeStyle = "rgba(255,255,255,.35)"; g.strokeRect(X(o.shade[0]) + .5, T + .5, X(o.shade[1]) - X(o.shade[0]), H - T - B); }
   if (o.mark != null) { g.strokeStyle = "rgba(255,255,255,.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
@@ -44,7 +46,9 @@ function bars(cv, o) {
   for (let i = 0; i <= 4; i++) { const v = mn + (mx - mn) * i / 4, y = Y(v); g.strokeStyle = COL.line; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText(v.toFixed(Math.abs(mx - mn) < 3 ? 2 : 1), L - 6, y + 4); }
   if (mn < 0) { g.strokeStyle = "rgba(255,255,255,.5)"; g.beginPath(); g.moveTo(L, Y(0)); g.lineTo(W - R, Y(0)); g.stroke(); }
   o.labels.forEach((lab, i) => {
-    const cx = L + gw * (i + 0.5); g.fillStyle = COL.soft; g.textAlign = "center"; g.fillText(lab, cx, H - 8);
+    const cx = L + gw * (i + 0.5); g.fillStyle = COL.soft; g.textAlign = "center";
+    const short = gw < g.measureText(lab).width + 8 ? lab.replace(" min", "") : lab;   // "5 min" becomes "5" when bars are narrow
+    if (gw >= g.measureText(short).width + 4 || i % 2 === 0) g.fillText(short, cx, H - 8);
     o.series.forEach((s, j) => { const v = s.data[i]; if (v == null || !isFinite(v)) return; const x = cx - (k * bw) / 2 + j * bw, y0 = Y(Math.max(0, mn < 0 ? 0 : 0)), y1 = Y(v);
       g.fillStyle = s.color; g.fillRect(x + 1, Math.min(y0, y1), bw - 2, Math.max(1, Math.abs(y1 - y0))); });
   });
@@ -158,10 +162,18 @@ function load(text, from) {
   pick(0);
   return true;
 }
+let READY = null;   // data loaded and waiting for the Run button
 function pick(i) {
   const s = LOADED.series[i];
   $("csv").value = SHOWN = toCsv(s.rows);
-  run(s.rows, [LOADED.filled ? `${LOADED.filled} missing 5-minute readings were filled in.` : "", LOADED.dateNote].filter(Boolean).join(" "));
+  READY = { rows: s.rows, note: [LOADED.filled ? `${LOADED.filled} missing 5-minute readings were filled in.` : "", LOADED.dateNote].filter(Boolean).join(" ") };
+  waiting(`Ready: ${s.rows.length} readings from ${s.rows[0].t.toISOString().slice(0, 16).replace("T", " ")} UTC, up to ${s.peak.toFixed(1)} in of water. Press “Run the forecast” to calculate.`);
+}
+// clear old results and point at the Run button
+function waiting(msg) {
+  if (PLAY) { clearInterval(PLAY); PLAY = null; $("play").textContent = "Play"; }
+  RES = null; $("results").hidden = true; $("status").classList.remove("bad"); $("status").textContent = msg;
+  $("run").classList.add("ready");
 }
 
 function run(rows, extra = "") {
@@ -186,8 +198,10 @@ function run(rows, extra = "") {
 }
 const runFromBox = () => {
   const v = $("csv").value;
-  if (v.trim() && v === SHOWN && LOADED) run(RES ? RES.rows : LOADED.series[+$("pick").value || 0].rows);
-  else load(v, "The pasted data");
+  if (!(v.trim() && v === SHOWN && READY)) { if (!load(v, "The pasted data")) return; }   // pasted or edited by hand: read it first
+  $("run").classList.remove("ready"); clearTimeout(toastTimer); $("toast").classList.remove("show"); $("toast").hidden = true;
+  const btn = $("run"); btn.disabled = true; btn.textContent = "Running…";
+  setTimeout(() => { try { run(READY.rows, READY.note); } finally { btn.disabled = false; btn.textContent = "Run the forecast"; } }, 30);
 };
 
 /* ------------------------------------------------------------ results */
@@ -196,11 +210,7 @@ function show(scroll) {
   const { rows, preds, rainFc, use } = RES, n = rows.length, last = n - 1;
   $("results").hidden = false;
   const peak = Math.max(...rows.map(r => r.depth));
-  $("res-lede").textContent = `${n} readings from ${rows[0].t.toISOString().slice(0, 16).replace("T", " ")} to ${hhmm(rows[last].t)} UTC; the deepest water measured was ${peak.toFixed(1)} inches.`;
-  const m0 = use[0], f = preds[m0][last], rf = rainFc[last];
-  $("res-facts").innerHTML = [[fmt(rows[last].depth), "depth at the last reading"], [fmt(f[3]), `${NAME[m0]} forecast in 20 minutes`], [fmt(f[7]), `${NAME[m0]} forecast in 40 minutes`],
-    rf ? [rf.reduce((a, b) => a + b, 0).toFixed(1) + " mm", "rain the ANN expects in the next 40 minutes"] : [fmt(Math.max(...f)), "highest forecast depth"]]
-    .map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join("");
+  $("res-lede").textContent = `${n} readings from ${rows[0].t.toISOString().slice(0, 16).replace("T", " ")} to ${hhmm(rows[last].t)} UTC; the deepest water measured was ${peak.toFixed(1)} inches. The boxes below show the moment chosen in “Watch the model make one forecast”; move its slider to change them.`;
   // over time: forecast for row t was made at row t - (ahead + 1)
   const series = use.map(m => ({ data: rows.map((_, t) => { const s = t - (ahead + 1); return s >= 11 && preds[m][s] ? preds[m][s][ahead] : null; }), color: COL[m], width: 2.2 }));
   drawTime = () => chart($("c-time"), { n, label: i => hhmm(rows[i].t), bars: rows.map(r => r.rain), shade: [STEP - 11, Math.min(n - 1, STEP + 8)], mark: STEP, lines: [{ data: rows.map(r => r.depth), color: COL.depth, width: 2.6 }, ...series] });
@@ -262,6 +272,13 @@ function showStep() {
             { data: [...new Array(11).fill(null), rows[s].depth, ...fut.map(r => r.depth), ...new Array(8 - known).fill(null)], color: COL.depth, width: 1.6, dash: [2, 3] },
             ...use.map(m => ({ data: [...new Array(11).fill(null), rows[s].depth, ...preds[m][s]], color: COL[m], width: 2.4, dash: [6, 4] }))] });
   keys("k-next", [[COL.depth, "What the model read (last hour)"], [COL.depth, "What really happened next", 1], ...use.map(m => [COL[m], `${NAME[m]} forecast`, 1]), [COL.rain, "Rain that fell (mm)"]]);
+  // the four boxes follow the chosen moment, with what really happened next where it is known
+  const m0 = use[0], f = preds[m0][s], at = t => `${hhmm(t)} UTC`, real = k => rows[s + k] ? ` (really ${rows[s + k].depth.toFixed(1)} in)` : "";
+  const fc = (h, k) => [fmt(f[h]), `${NAME[m0]} forecast for ${at(new Date(rows[s].t.getTime() + k * 300000))}${real(k)}`];
+  $("res-facts").innerHTML = [[fmt(rows[s].depth), `depth measured at ${at(rows[s].t)}`], fc(3, 4), fc(7, 8),
+    rainFc[s] ? [rainFc[s].reduce((a, b) => a + b, 0).toFixed(1) + " mm", `rain the ANN expected in the next 40 minutes${fut.length === 8 ? ` (really ${fut.reduce((a, r) => a + (r.rain || 0), 0).toFixed(1)} mm)` : ""}`]
+              : [fmt(Math.max(...rows.map(r => r.depth))), "deepest water measured in this storm"]]
+    .map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join("");
   // the numbers going in and coming out
   const cells = (arr, f) => arr.map(v => `<td class="n">${f(v)}</td>`).join("");
   $("t-in").innerHTML = `<tr><th></th>${past.map(r => `<th class="n">${hhmm(r.t)}</th>`).join("")}</tr>
@@ -275,7 +292,7 @@ function showStep() {
     use.map(m => `<tr><td style="color:${COL[m]}">${NAME[m]} depth (in)</td>${cells(preds[m][s], v => v.toFixed(1))}</tr>`).join("") +
     `<tr class="real"><td>Really happened (in)</td>${cells([...Array(8)].map((_, h) => fut[h]), r => r ? r.depth.toFixed(1) : "?")}</tr>`;
   // one plain sentence
-  const m0 = use[0], f20 = preds[m0][s][3], r20 = rows[s + 4];
+  const f20 = preds[m0][s][3], r20 = rows[s + 4];
   const rainHr = past.reduce((a, r) => a + (r.rain || 0), 0);
   $("step-say").innerHTML = `At <b>${hhmm(rows[s].t)}</b> the water was <b>${rows[s].depth.toFixed(1)} in</b> and <b>${rainHr.toFixed(1)} mm</b> of rain had fallen in the hour before. ` +
     (ann ? `The ANN expected <b>${rainFc[s].reduce((a, b) => a + b, 0).toFixed(1)} mm</b> more in the next 40 minutes${fut.length === 8 ? ` (<b>${fut.reduce((a, r) => a + (r.rain || 0), 0).toFixed(1)} mm</b> really fell)` : ""}. ` : "") +
@@ -307,7 +324,7 @@ async function init() {
     await new Promise(r => setTimeout(r, 30));
     try { const ok = load(await f.text(), f.name); fileLabel(ok ? `${f.name} loaded. Choose another file` : `${f.name} could not be read. Try another file`);
       if (ok) { const k = LOADED.series.length, rows = LOADED.series.reduce((a, s) => a + s.rows.length, 0);
-        toast(`CSV received: ${f.name}`, `${rows.toLocaleString()} readings${k > 1 ? ` in ${k.toLocaleString()} storms` : ""} (${(f.size / 1e6).toFixed(1)} MB). The forecast has run.`); }
+        toast(`CSV received: ${f.name}`, `${rows.toLocaleString()} readings${k > 1 ? ` in ${k.toLocaleString()} storms` : ""} (${f.size < 1e5 ? Math.max(1, Math.round(f.size / 1e3)) + " KB" : (f.size / 1e6).toFixed(1) + " MB"}). Press “Run the forecast” to calculate.`); }
       else toast(`Couldn't read ${f.name}`, $("status").textContent, true); }
     catch (e) { $("status").textContent = "The browser could not open that file: " + e.message; fileLabel(""); }
   };
@@ -327,7 +344,7 @@ async function init() {
   };
   $("template").onclick = e => { e.preventDefault(); download("model_lab_template.csv", "time_utc,rain_mm,depth_in\n2026-07-18 15:00,0,0\n2026-07-18 15:05,0.5,0\n"); };
   $("download").onclick = e => { e.preventDefault(); if (!RES) return; const t = $("t-rows"); download("model_lab_results.csv", [...t.rows].map(r => [...r.cells].map(c => c.textContent).join(",")).join("\n")); };
-  $("model-seg").querySelectorAll("button").forEach(b => b.onclick = () => { choice = b.dataset.m; $("model-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); info(); if (RES) run(RES.rows); });
+  $("model-seg").querySelectorAll("button").forEach(b => b.onclick = () => { choice = b.dataset.m; $("model-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); info(); if (RES) waiting("Model changed. Press “Run the forecast” to calculate again."); });
   $("ahead-seg").querySelectorAll("button").forEach(b => b.onclick = () => { ahead = +b.dataset.h; $("ahead-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); if (RES) show(false); });
   info();
   for (const m of ["ann_lstm", "cnn_lstm"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });

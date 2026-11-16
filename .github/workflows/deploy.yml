@@ -1,0 +1,81 @@
+# Live forecast + deploy to Vercel.
+#
+# Every 30 minutes (and whenever the code changes) GitHub:
+#   1. builds the data store from backend/data,
+#   2. runs one live update (Open-Meteo weather, airport rain gauges, XGBoost street model, CNN-LSTM sensors),
+#   3. writes the whole site as plain files (backend/build_static.py),
+#   4. deploys it to Vercel.
+# Nothing is committed back to the repository, so its history stays small.
+#
+# One-time setup (see README, "Hosting on Vercel"):
+#   Settings > Secrets and variables > Actions
+#     secret    VERCEL_TOKEN   a token from vercel.com/account/tokens
+#     variable  SITE_URL       the site's address, e.g. https://flood-watch.vercel.app  (add after the first deploy)
+#     variable  VERCEL_SCOPE   only if the Vercel project lives in a team, the team's slug
+
+name: Live forecast and deploy
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"          # twice an hour, off the busy top of the hour; GitHub may start it a few minutes late
+  workflow_dispatch:                 # "Run workflow" button
+  push:
+    branches: [main]
+    paths: ["frontend/**", "backend/**", "models/**", "data/processed/**", "data/raw/**", "requirements.txt", ".github/workflows/deploy.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SITE_URL: ${{ vars.SITE_URL }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+      PROJECT: flood-watch
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Live update and static site
+        run: |
+          if [ -n "$SITE_URL" ]; then
+            python3 backend/build_static.py --update --previous "$SITE_URL"
+          else
+            python3 backend/build_static.py --update
+          fi
+
+      - name: Check the site
+        run: |
+          for f in index.html lab.html vercel.json api/index api/roads api/live api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
+            test -s "site/$f" || { echo "missing site/$f"; exit 1; }
+          done
+          python3 -c "import json; L = json.load(open('site/api/live')); print('live forecast:', L['updated'])"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Deploy to Vercel
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then echo "Add the VERCEL_TOKEN secret first (see the top of this file)."; exit 1; fi
+          npm install --global vercel@latest --silent
+          SCOPE=""; if [ -n "$VERCEL_SCOPE" ]; then SCOPE="--scope $VERCEL_SCOPE"; fi
+          cd site
+          # first run creates the project; later runs deploy to the same one
+          URL=$(vercel deploy --prod --yes --project "$PROJECT" --create-if-missing --token "$VERCEL_TOKEN" $SCOPE)
+          echo "Deployed: $URL"
+          echo "### Deployed to Vercel: $URL" >> "$GITHUB_STEP_SUMMARY"
