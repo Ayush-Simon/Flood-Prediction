@@ -305,7 +305,10 @@ async function init() {
     if (f.size > 300e6) { $("status").textContent = "That file is over 300 MB. Split it into smaller files first."; return; }
     fileLabel(`Reading ${f.name}…`); $("status").textContent = "Reading the file…"; $("sample").value = "";
     await new Promise(r => setTimeout(r, 30));
-    try { const ok = load(await f.text(), f.name); fileLabel(ok ? `${f.name} loaded. Choose another file` : `${f.name} could not be read. Try another file`); }
+    try { const ok = load(await f.text(), f.name); fileLabel(ok ? `${f.name} loaded. Choose another file` : `${f.name} could not be read. Try another file`);
+      if (ok) { const k = LOADED.series.length, rows = LOADED.series.reduce((a, s) => a + s.rows.length, 0);
+        toast(`CSV received: ${f.name}`, `${rows.toLocaleString()} readings${k > 1 ? ` in ${k.toLocaleString()} storms` : ""} (${(f.size / 1e6).toFixed(1)} MB). The forecast has run.`); }
+      else toast(`Couldn't read ${f.name}`, $("status").textContent, true); }
     catch (e) { $("status").textContent = "The browser could not open that file: " + e.message; fileLabel(""); }
   };
   $("file").onchange = e => { openFile(e.target.files[0]); e.target.value = ""; };
@@ -330,6 +333,12 @@ async function init() {
   for (const m of ["ann_lstm", "cnn_lstm"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });
   if (window.Sky) Sky.set({ storm: 0.45, rain: 0, thunder: 0 });
   let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => RES && show(false), 250); });
+}
+let toastTimer;
+function toast(title, text, bad) {
+  const el = $("toast"); el.querySelector("b").textContent = title; el.querySelector("span").textContent = text;
+  el.classList.toggle("bad", !!bad); el.hidden = false; requestAnimationFrame(() => el.classList.add("show"));
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.hidden = true, 300); }, bad ? 7000 : 4500);
 }
 const fileLabel = t => $("file-label").textContent = t || "Upload a CSV file, or drop it here";
 init();
