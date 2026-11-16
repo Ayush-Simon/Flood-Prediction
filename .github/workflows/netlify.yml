@@ -1,0 +1,108 @@
+# Netlify hosting with a live forecast every 30 minutes, inside Netlify's free credits.
+#
+# Netlify's free plan allows only about 20 production deploys a month, so the site is NOT redeployed for each forecast:
+#   live job  (every 30 min)  runs one live update and force-pushes live.json / history.json to the "live-data" branch
+#                             (one commit, replaced each time, so the repository does not grow)
+#   site job  (code changes)  builds the site as plain files and deploys it to Netlify; the page reads its live
+#                             forecast from the live-data branch, and falls back to the copy built into the site
+#
+# One-time setup (README, "Hosting on Netlify"):
+#   Settings > Secrets and variables > Actions
+#     secret    NETLIFY_AUTH_TOKEN   from app.netlify.com/user/applications (Personal access tokens)
+#     variable  NETLIFY_SITE_NAME    optional; default nyc-flood-watch-<your GitHub name>; must be unique on Netlify
+#   Settings > Actions > General > Workflow permissions: "Read and write permissions" (so the live job can push)
+# The repository must be public: the page reads live.json from raw.githubusercontent.com without signing in.
+
+name: Netlify site and live forecast
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"           # live job, twice an hour; GitHub may start it a few minutes late
+  workflow_dispatch:                  # "Run workflow" runs both jobs
+  push:
+    branches: [main]
+    paths: ["frontend/**", "backend/**", "models/**", "data/processed/**", "data/raw/**", "requirements.txt", ".github/workflows/netlify.yml"]
+
+concurrency:
+  group: netlify-${{ github.event_name == 'schedule' && 'live' || 'site' }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Previous history
+        run: curl -fsS "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/live-data/history.json" -o previous_history.json || echo "no previous history yet"
+
+      - name: Live update
+        run: python3 backend/build_live_feed.py --out feed --history previous_history.json
+
+      - name: Publish to the live-data branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd feed
+          git init -q -b live-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Live forecast $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" live-data
+          echo "### Live forecast published: $(python3 -c "import json; print(json.load(open('live.json'))['updated'])")" >> "$GITHUB_STEP_SUMMARY"
+
+  site:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      SITE_NAME: ${{ vars.NETLIFY_SITE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Build the static site
+        run: |
+          python3 backend/build_static.py --update \
+            --live-url "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/live-data/live.json"
+          for f in index.html lab.html _headers api/index api/roads api/live api/source api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
+            test -s "site/$f" || { echo "missing site/$f"; exit 1; }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Deploy to Netlify
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then echo "Add the NETLIFY_AUTH_TOKEN secret first (see the top of this file)."; exit 1; fi
+          NAME="${SITE_NAME:-nyc-flood-watch-$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')}"
+          npm install --global netlify-cli@latest --silent
+          # first run creates the site with this name; later runs deploy to it (one production deploy = 15 of the 300 free monthly credits)
+          netlify deploy --prod --no-build --dir site --site-name "$NAME" --auth "$NETLIFY_AUTH_TOKEN" --message "Code update ${GITHUB_SHA::7}" --json > deploy.json
+          URL=$(python3 -c "import json; d = json.load(open('deploy.json')); print(d.get('url') or d.get('deploy_url'))")
+          echo "Deployed: $URL"
+          echo "### Deployed to Netlify: $URL" >> "$GITHUB_STEP_SUMMARY"

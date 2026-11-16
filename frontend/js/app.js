@@ -446,6 +446,26 @@ function today(L) {
 
 /* ---------------------------------------------------------------- page */
 // all data comes from the backend API (backend/server.py), never from files in the frontend
+/* On the hosted site the live forecast is refreshed every 30 minutes on the repository's live-data branch, while the
+   site itself is only redeployed when the code changes. api/source names that file; the copy built into the site is the
+   fallback, and whichever is newer wins. On your own computer api/source is null and the server's forecast is used. */
+let LIVE_SRC = null;
+async function liveJSON() {
+  if (LIVE_SRC === null) {
+    try { const s = await getJSON("source.json"); LIVE_SRC = s && /^https:\/\/raw\.githubusercontent\.com\/[\w.-]+\/[\w.-]+\/live-data\/live\.json$/.test(s.live) ? s.live : ""; }
+    catch (e) { LIVE_SRC = ""; }
+  }
+  const local = getJSON("live.json").catch(() => null);
+  if (!LIVE_SRC) return local;
+  const remote = fetch(`${LIVE_SRC}?t=${Math.floor(Date.now() / 60000)}`, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" })
+    .then(r => r.ok ? r.json() : null).catch(() => null);
+  const [a, b] = await Promise.all([local, remote]);
+  const ok = x => x && typeof x === "object" && typeof x.updated === "string";
+  if (ok(a) && ok(b)) return b.updated >= a.updated ? b : a;
+  if (ok(b)) return b;
+  if (ok(a)) return a;
+  throw new Error("no live forecast");
+}
 const API = f => f.startsWith("storm_") ? "api/storm/" + f.slice(6, 16) : "api/" + f.split(".")[0];
 const getJSON = async f => { const r = await fetch(API(f), { headers: { Accept: "application/json" }, cache: "no-store" }); if (!r.ok) throw new Error(f + " " + r.status); return r.json(); };
 function facts(items) { $("facts").innerHTML = items.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join(""); }
@@ -470,7 +490,7 @@ const val = (v, u) => v == null || Number.isNaN(+v) ? "–" : v + u;   // a valu
 const compass = d => d == null ? "" : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(d / 45) % 8];
 async function loadLive() {
   let L;
-  try { L = await getJSON("live.json"); } catch (e) { L = null; }
+  try { L = await liveJSON(); } catch (e) { L = null; }
   if (!L) {
     $("headline").textContent = "Live data is not running";
     $("summary").textContent = "Start the live app from the project folder with: python3 backend/app.py. It fetches the weather every 15 minutes. You can still look at past storms.";

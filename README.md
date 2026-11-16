@@ -38,7 +38,26 @@ Open http://localhost:8000. Use **Past storms** in the header to replay 2026 sto
 Without live weather: `python3 backend/app.py --no-live`.
 Record of the live run for the report: `python3 backend/export_history.py --days 3`.
 
-## Hosting on Vercel (live forecast every 30 minutes)
+## Hosting on Netlify (live forecast every 30 minutes)
+
+Netlify's free plan allows only about 20 production deploys a month, so the site is not redeployed for every forecast.
+`.github/workflows/netlify.yml` has two jobs:
+- **live** (every 30 minutes): runs one live update with `backend/build_live_feed.py` and force-pushes `live.json` and
+  `history.json` to the `live-data` branch (a single commit, replaced each time, so the repository does not grow).
+- **site** (when the code changes, or "Run workflow"): builds the site with `backend/build_static.py --live-url ...`
+  and deploys it to Netlify. The page reads the live forecast from the `live-data` branch and falls back to the copy
+  built into the site if GitHub cannot be reached.
+
+One-time setup (the repository must be public, because the page reads `live.json` without signing in):
+1. Create a free Netlify account and a personal access token at https://app.netlify.com/user/applications.
+2. GitHub repo > Settings > Secrets and variables > Actions > New repository secret: `NETLIFY_AUTH_TOKEN`.
+3. GitHub repo > Settings > Actions > General > Workflow permissions: choose "Read and write permissions", Save.
+4. Actions tab > "Netlify site and live forecast" > Run workflow. The site job's summary shows the address
+   (default name `nyc-flood-watch-<your GitHub name>`; set the variable `NETLIFY_SITE_NAME` to choose another).
+
+## Hosting on Vercel instead (switched off)
+
+`.github/workflows/deploy.yml` is kept for reference and runs only when started by hand. To use it, restore its schedule and push triggers and turn off `netlify.yml`.
 
 Vercel only serves files, so a GitHub Action does the live work and deploys the result:
 `.github/workflows/deploy.yml` runs every 30 minutes (and on every push to `main`). It builds the data store,

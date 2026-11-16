@@ -5,11 +5,14 @@
   python3 backend/build_static.py --update --previous https://your-site.vercel.app
         also keep the 30-day history from the site that is online now, and reuse its live
         forecast if this update fails (so a failed run never leaves the site without one)
+  python3 backend/build_static.py --update --live-url https://raw.githubusercontent.com/OWNER/REPO/live-data/live.json
+        Netlify: the page reads its live forecast from that file (refreshed by GitHub every 30 minutes,
+        see backend/build_live_feed.py), so the site only needs redeploying when the code changes
 
 It writes site/:
   site/index.html, lab.html, css/, js/, fonts/   the frontend, copied as it is
   site/api/...                                   one file per answer the Python server gives
-  site/vercel.json                               the same security headers as backend/server.py
+  site/vercel.json, site/_headers                the same security headers as backend/server.py (Vercel, Netlify)
 
 The GitHub Action in .github/workflows/deploy.yml runs this every 30 minutes and deploys site/ to Vercel.
 """
@@ -23,6 +26,7 @@ import store                                                  # noqa: E402
 from server import SECURITY_HEADERS, STATIC_TYPES, FRONTEND   # noqa: E402  (same headers and file types as the server)
 
 OUT = os.path.join(ROOT, "site")
+LIVE_URL = re.compile(r"^https://raw\.githubusercontent\.com/[\w.-]+/[\w.-]+/live-data/live\.json$")
 SAFE = re.compile(r"^(index|roads|live|weather|lab_samples|storm:\d{4}-\d{2}-\d{2}|model:[a-z_]{1,32})$")
 
 
@@ -42,7 +46,10 @@ def main():
     ap.add_argument("--update", action="store_true", help="run one live update first")
     ap.add_argument("--previous", help="address of the site that is online now")
     ap.add_argument("--every", type=int, default=30, help="minutes between scheduled updates (shown on the site)")
+    ap.add_argument("--live-url", help="raw.githubusercontent.com address of the live-data branch's live.json")
     a = ap.parse_args()
+    if a.live_url and not LIVE_URL.match(a.live_url):
+        sys.exit("--live-url must look like https://raw.githubusercontent.com/OWNER/REPO/live-data/live.json")
 
     if not os.path.exists(store.DB):
         print("Building the data store from backend/data ...")
@@ -111,6 +118,8 @@ def main():
         rows = [hist[k] for k in sorted(hist) if k >= cut]
         with open(os.path.join(api, "history"), "w") as f:
             json.dump(rows, f, separators=(",", ":"))
+        with open(os.path.join(api, "source"), "w") as f:            # where the page fetches the live forecast
+            json.dump({"live": a.live_url} if a.live_url else None, f)
         live = con.execute("SELECT updated FROM datasets WHERE name='live'").fetchone()
         with open(os.path.join(api, "health"), "w") as f:
             json.dump({"ok": True, "datasets": len(names), "last_live_update": live[0] if live else None, "host": "static"}, f)
@@ -118,7 +127,11 @@ def main():
         con.close()
 
     # ---- hosting settings: security headers on everything, JSON type and no caching on the data
-    sec = [{"key": k, "value": v} for k, v in SECURITY_HEADERS.items()]
+    headers = dict(SECURITY_HEADERS)
+    if a.live_url:                                                     # the page may also read the live-data file
+        headers["Content-Security-Policy"] = headers["Content-Security-Policy"].replace(
+            "connect-src 'self'", "connect-src 'self' https://raw.githubusercontent.com")
+    sec = [{"key": k, "value": v} for k, v in headers.items()]
     cfg = {
         "cleanUrls": False,
         "trailingSlash": False,
@@ -131,6 +144,11 @@ def main():
     }
     with open(os.path.join(OUT, "vercel.json"), "w") as f:
         json.dump(cfg, f, indent=2)
+    with open(os.path.join(OUT, "_headers"), "w") as f:              # the same rules in Netlify's format
+        f.write("/*\n" + "".join(f"  {k}: {v}\n" for k, v in headers.items()))
+        f.write("/api/*\n  Content-Type: application/json; charset=utf-8\n  Cache-Control: no-store\n")
+        for ext in ("html", "js", "css"):
+            f.write(f"/*.{ext}\n  Cache-Control: no-cache\n")
 
     n = sum(len(fs) for _, _, fs in os.walk(OUT))
     size = sum(os.path.getsize(os.path.join(d, x)) for d, _, fs in os.walk(OUT) for x in fs)

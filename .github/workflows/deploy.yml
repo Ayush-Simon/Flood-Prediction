@@ -15,13 +15,15 @@
 
 name: Live forecast and deploy
 
+# Switched off: the site is hosted on Netlify now (.github/workflows/netlify.yml). To use Vercel instead,
+# put back the schedule and push triggers below and turn off netlify.yml.
 on:
-  schedule:
-    - cron: "7,37 * * * *"          # twice an hour, off the busy top of the hour; GitHub may start it a few minutes late
-  workflow_dispatch:                 # "Run workflow" button
-  push:
-    branches: [main]
-    paths: ["frontend/**", "backend/**", "models/**", "data/processed/**", "data/raw/**", "requirements.txt", ".github/workflows/deploy.yml"]
+  workflow_dispatch:                 # "Run workflow" button only
+  # schedule:
+  #   - cron: "7,37 * * * *"
+  # push:
+  #   branches: [main]
+  #   paths: ["frontend/**", "backend/**", "models/**", "data/processed/**", "data/raw/**", "requirements.txt", ".github/workflows/deploy.yml"]
 
 permissions:
   contents: read
