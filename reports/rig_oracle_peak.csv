@@ -1,0 +1,6 @@
+model,R2_peak_next_40min,lo,hi,R2_exact_40min
+Persistence (water stays as it is),0.521412,0.37386405,0.68650603,-0.09948897
+LSTM,0.55106556,0.42060834,0.68642026,0.1077981
+ANN-LSTM (ANN rain forecast),0.5502293,0.41768473,0.6870761,0.053322315
+LSTM + perfect future rain (oracle),0.6164483,0.5075657,0.72434473,0.18508804
+Bucket physics + perfect future rain,0.65816057,0.5560997,0.7398656,0.26603836

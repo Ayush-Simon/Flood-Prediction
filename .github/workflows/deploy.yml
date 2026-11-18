@@ -62,10 +62,10 @@ jobs:
 
       - name: Check the site
         run: |
-          for f in index.html lab.html vercel.json api/index api/roads api/live api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
+          for f in index.html lab.html vercel.json api/index api/roads api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
             test -s "site/$f" || { echo "missing site/$f"; exit 1; }
           done
-          python3 -c "import json; L = json.load(open('site/api/live')); print('live forecast:', L['updated'])"
+          python3 -c "import json; L = json.load(open('site/api/live')); print('live forecast:', L['updated'] if L else 'none yet')"
 
       - uses: actions/setup-node@v4
         with:

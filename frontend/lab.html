@@ -6,8 +6,8 @@
 <title>Model Lab · NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css?v=6">
-<link rel="stylesheet" href="css/lab.css?v=6">
+<link rel="stylesheet" href="css/style.css?v=7">
+<link rel="stylesheet" href="css/lab.css?v=7">
 </head>
 <body class="live lab">
 <canvas id="sky" aria-hidden="true"></canvas>
@@ -84,7 +84,11 @@
     </div>
 
     <div class="box" style="margin-top:18px"><h3>How close it was on this data</h3><table id="t-acc"></table>
-      <p class="note">Only rows where the real depth later is known. RMSE: typical miss in inches, lower is better. R² near 1 is good, 0 is no better than the average.</p></div>
+      <p class="note">Only rows where the real depth later is known. RMSE: typical miss in inches, lower is better. R² near 1 is good, 0 is no better than the average. “Highest in 40 min” is the deepest water in the next 40 minutes, whenever it comes: the models judge this much better than the exact minute (on the 2026 test storms R² 0.55 against 0.11).</p></div>
+
+    <div class="box" style="margin-top:18px"><h3>Flood warnings on your data</h3><table id="t-warn"></table>
+      <p class="note" id="warn-say"></p>
+      <p class="note">A flood is caught if any alarm came in the 40 minutes before the depth first reached 1 inch; one continuous alarm counts once, and it is false if no flood started within 40 minutes of it. Alarm levels were tuned on the 2026 test storms.</p></div>
 
     <h2 style="margin-top:56px">Compare the models</h2>
     <p class="lede" id="cmp-lede">How each model did on your data at every forecast time, against the simplest baseline: assuming the water stays as it is now (persistence). A model is only useful where it beats persistence.</p>
@@ -108,9 +112,9 @@
 
   <footer>The models were trained on New York FloodNet sensors and airport rain gauges (2021–2025) and tested on July–October 2026. On other places or rain sources they may be less accurate. Runs entirely in your browser; nothing you paste is uploaded.</footer>
 </main>
-<script src="js/sky.js?v=6" defer></script>
-<script src="js/models.js?v=6" defer></script>
-<script src="js/lab.js?v=6" defer></script>
+<script src="js/sky.js?v=7" defer></script>
+<script src="js/models.js?v=7" defer></script>
+<script src="js/lab.js?v=7" defer></script>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden><i aria-hidden="true">✓</i><div><b></b><span></span></div></div>
 </body>
 </html>

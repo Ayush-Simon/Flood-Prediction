@@ -415,7 +415,10 @@ function play() { if (playing) { playing = false; $("play").textContent = "▶";
 /* ---------------------------------------------------------------- today's prediction (live model output) */
 function today(L) {
   const sc = L.scenarios || [], sens = L.sensors.filter(s => s.fc), dry = L.what_if;
-  const deep = sens.reduce((m, s) => Math.max(m, s.fc[7] || 0), 0), wet40 = sens.filter(s => (s.fc[7] || 0) > 0.5).length;
+  // the highest forecast depth in the next 40 minutes: far more reliable than the depth at exactly 40 minutes
+  // (test R² 0.55 vs 0.11, scripts/14a): the models know how big a flood gets better than the minute it peaks
+  const peak = s => Math.max(0, ...s.fc.map(v => v || 0));
+  const deep = sens.reduce((m, s) => Math.max(m, peak(s)), 0), wet40 = sens.filter(s => peak(s) > 0.5).length;
   const rain40 = sens.length ? sens.reduce((a, s) => a + (s.rain_fc || []).reduce((x, y) => x + y, 0), 0) / sens.length : 0;
   const run = L.model_run;
   $("today-lede").textContent = `Worked out by the models at ${L.now_local} (New York time) from the rain forecast for the next 24 hours` +
@@ -437,11 +440,12 @@ function today(L) {
   // boroughs + sensors
   const B = L.boro || {};
   table("t-boro", ["Borough", "High", "Medium", "Low"], Object.entries(B).map(([b, c]) => [b, ...(dry ? [0, 0, 0] : c).map(v => v.toLocaleString())]));
-  const top = sens.slice().sort((a, b) => (b.fc[7] || 0) - (a.fc[7] || 0)).slice(0, 5);
+  const top = sens.slice().sort((a, b) => peak(b) - peak(a)).slice(0, 5);
   const anyWet = sens.some(s => s.fc.some(v => v > 0.05));
-  if (anyWet) table("t-sens", ["Sensor", "5 min", "20 min", "40 min"], top.map(s => [shortName(s.name), ...[0, 3, 7].map(k => fmtIn(s.fc[k]))]));
+  if (anyWet) table("t-sens", ["Sensor", "Highest in 40 min", "5 min", "20 min", "40 min"], top.map(s => [shortName(s.name), fmtIn(peak(s)), ...[0, 3, 7].map(k => fmtIn(s.fc[k]))]));
   else $("t-sens").innerHTML = `<tr><td>All ${sens.length} sensors are forecast to stay dry for the next 40 minutes.</td></tr>`;
-  $("sens-say").textContent = (wet40 ? `${wet40} of ${sens.length} sensors are forecast to have water 40 minutes from now, the deepest ${fmtIn(deep)}. ` : "") + (L.depth_connected ? "" : "Live sensor depths are not connected, so each forecast starts from a dry street and comes from the coming rain alone.");
+  $("sens-say").textContent = (wet40 ? `${wet40} of ${sens.length} sensors are forecast to have water some time in the next 40 minutes, the deepest ${fmtIn(deep)}. ` : "")
+    + "“Highest in 40 min” is the most reliable number here: the models judge how deep a flood gets much better than the exact minute it peaks. " + (L.depth_connected ? "" : "Live sensor depths are not connected, so each forecast starts from a dry street and comes from the coming rain alone.");
 }
 
 /* ---------------------------------------------------------------- page */
@@ -493,7 +497,7 @@ async function loadLive() {
   try { L = await liveJSON(); } catch (e) { L = null; }
   if (!L) {
     $("headline").textContent = "Live data is not running";
-    $("summary").textContent = "Start the live app from the project folder with: python3 backend/app.py. It fetches the weather every 15 minutes. You can still look at past storms.";
+    $("summary").textContent = LIVE_SRC ? "The live forecast is not available right now. It is refreshed every 30 minutes; meanwhile you can look at past storms." : "Start the live app from the project folder with: python3 backend/app.py. It fetches the weather every 15 minutes. You can still look at past storms.";
     $("facts").innerHTML = ""; $("now").style.display = "none"; return false;
   }
   $("now").style.display = ""; if (playing) play();

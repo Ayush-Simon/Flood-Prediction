@@ -107,6 +107,9 @@ def main():
             with open(os.path.join(api, path), "w") as f:
                 json.dump(obj, f, separators=(",", ":"))
             written += 1
+        if "live" not in names:                                   # no forecast yet (first run and the update failed):
+            with open(os.path.join(api, "live"), "w") as f:       # the page then uses the live-data branch, or says
+                f.write("null")                                   # that there is no live forecast
         if "weather" not in names:                                # optional: the server answers null
             with open(os.path.join(api, "weather"), "w") as f:
                 f.write("null")

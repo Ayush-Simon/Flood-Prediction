@@ -88,7 +88,7 @@ jobs:
         run: |
           python3 backend/build_static.py --update \
             --live-url "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/live-data/live.json"
-          for f in index.html lab.html _headers api/index api/roads api/live api/source api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
+          for f in index.html lab.html _headers api/index api/roads api/source api/lab_samples api/model/ann_lstm api/model/cnn_lstm; do
             test -s "site/$f" || { echo "missing site/$f"; exit 1; }
           done
 

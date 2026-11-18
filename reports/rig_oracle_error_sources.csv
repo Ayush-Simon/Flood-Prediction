@@ -1,0 +1,7 @@
+model,situation,windows,share_of_windows,share_of_squared_error,RMSE_in
+LSTM,street already flooded (1 in or more now),2670,0.3799089356858281,0.5161,2.833996
+LSTM,flood starts within the 40 minutes,829,0.11795674445076836,0.47465903,4.877548
+LSTM,stays under 1 in,3529,0.5021343198634035,0.009241052,0.32985482
+LSTM + perfect rain,street already flooded (1 in or more now),2670,0.3799089356858281,0.5658778,2.8360734
+LSTM + perfect rain,flood starts within the 40 minutes,829,0.11795674445076836,0.41422266,4.3546314
+LSTM + perfect rain,stays under 1 in,3529,0.5021343198634035,0.019899568,0.46260226

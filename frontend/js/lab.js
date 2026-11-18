@@ -208,6 +208,7 @@ const runFromBox = () => {
 const hhmm = t => t.toISOString().slice(11, 16);
 function show(scroll) {
   const { rows, preds, rainFc, use } = RES, n = rows.length, last = n - 1;
+  WARN = warnings(rows, preds, use);                                      // before the step panel, which shows it
   $("results").hidden = false;
   const peak = Math.max(...rows.map(r => r.depth));
   $("res-lede").textContent = `${n} readings from ${rows[0].t.toISOString().slice(0, 16).replace("T", " ")} to ${hhmm(rows[last].t)} UTC; the deepest water measured was ${peak.toFixed(1)} inches. The boxes below show the moment chosen in “Watch the model make one forecast”; move its slider to change them.`;
@@ -226,6 +227,19 @@ function show(scroll) {
     const mean = a.reduce((x, y) => x + y, 0) / a.length, se = a.reduce((x, v, i) => x + (v - p[i]) ** 2, 0), st = a.reduce((x, v) => x + (v - mean) ** 2, 0);
     acc.push([NAME[m], `${5 * (h + 1)} min`, Math.sqrt(se / a.length).toFixed(2), st > 1e-9 ? (1 - se / st).toFixed(2) : "–", a.length]);
   }
+  for (const m of use) {                                                     // the highest depth in the next 40 minutes, whenever it comes
+    const a = [], p = [];
+    for (let s = 11; s + 8 < n; s++) { a.push(Math.max(...rows.slice(s + 1, s + 9).map(r => r.depth))); p.push(Math.max(...preds[m][s])); }
+    if (!a.length) continue;
+    const mean = a.reduce((x, y) => x + y, 0) / a.length, se = a.reduce((x, v, i) => x + (v - p[i]) ** 2, 0), st = a.reduce((x, v) => x + (v - mean) ** 2, 0);
+    acc.push([NAME[m], "highest in 40 min", Math.sqrt(se / a.length).toFixed(2), st > 1e-9 ? (1 - se / st).toFixed(2) : "–", a.length]);
+  }
+  // flood warnings on this data, counted per flood (scripts/14b): a flood starts when the depth first reaches 1 inch;
+  // it is caught if an alarm came in the 40 minutes before; one continuous alarm counts once
+  $("t-warn").innerHTML = "<tr><th>Rule</th><th class='n'>Floods caught</th><th class='n'>False alarms</th><th class='n'>Median lead</th></tr>" +
+    WARN.rules.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.caught} of ${WARN.floods}</td><td class="n">${r.runs ? `${r.falseRuns} of ${r.runs}` : "none raised"}</td><td class="n">${r.leads.length ? median(r.leads) + " min" : "–"}</td></tr>`).join("");
+  $("warn-say").textContent = WARN.floods ? `${WARN.floods} flood${WARN.floods > 1 ? "s" : ""} started in this data (depth reaching 1 inch after the first hour). On the 2026 test storms the “water shows” rule caught 65% of floods with half its alarms false, the best of all rules tried.`
+    : "No flood starts in this data after the first hour (the depth never rises to 1 inch from below), so there is nothing to warn about.";
   $("t-acc").innerHTML = "<tr><th>Model</th><th>Ahead</th><th class='n'>RMSE (in)</th><th class='n'>R²</th><th class='n'>Checks</th></tr>" +
     acc.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td class="n">${r[2]}</td><td class="n">${r[3]}</td><td class="n">${r[4]}</td></tr>`).join("") || "<tr><td>Not enough rows after the first hour to check.</td></tr>";
   // compare the models at every forecast time, with persistence as the baseline
@@ -259,6 +273,27 @@ function show(scroll) {
 }
 
 /* one forecast, opened up: what the model reads, what it outputs, what really happened */
+const WATER_SHOWS = 0.1, MODEL_ALARM = 0.7;                                // tuned on the 2026 test storms (scripts/14b)
+let WARN = null;
+const median = a => { const b = a.slice().sort((x, y) => x - y); return b[Math.floor((b.length - 1) / 2)]; };
+function warnings(rows, preds, use) {
+  const n = rows.length, onsets = [];
+  for (let i = 11; i + 1 < n; i++) if (rows[i].depth < 1 && rows[i + 1].depth >= 1) onsets.push(i);   // the flood starts after window i
+  const rule = (name, alarm) => {
+    const a = rows.map((r, s) => s >= 11 && r.depth < 1 && alarm(s));
+    let caught = 0; const leads = [];
+    for (const i of onsets) { let first = -1; for (let s = Math.max(11, i - 7); s <= i; s++) if (a[s]) { first = s; break; }
+      if (first >= 0) { caught++; leads.push(5 * (i - first + 1)); } }
+    let runs = 0, falseRuns = 0;
+    for (let s = 0; s < n; s++) if (a[s] && !a[s - 1]) {                     // one continuous alarm
+      runs++; let e = s; while (e + 1 < n && a[e + 1]) e++;
+      if (!onsets.some(i => i >= s && i <= e + 7)) falseRuns++;
+    }
+    return { name, alarm: a, caught, leads, runs, falseRuns };
+  };
+  return { floods: onsets.length, rules: [rule(`Water shows (${WATER_SHOWS} in or more)`, s => rows[s].depth >= WATER_SHOWS),
+    ...use.map(m => rule(`${NAME[m]}: forecast reaches ${MODEL_ALARM} in within 40 min`, s => Math.max(...preds[m][s]) >= MODEL_ALARM))] };
+}
 let drawTime = () => {};
 function showStep() {
   if (!RES) return;
@@ -275,7 +310,9 @@ function showStep() {
   // the four boxes follow the chosen moment, with what really happened next where it is known
   const m0 = use[0], f = preds[m0][s], at = t => `${hhmm(t)} UTC`, real = k => rows[s + k] ? ` (really ${rows[s + k].depth.toFixed(1)} in)` : "";
   const fc = (h, k) => [fmt(f[h]), `${NAME[m0]} forecast for ${at(new Date(rows[s].t.getTime() + k * 300000))}${real(k)}`];
-  $("res-facts").innerHTML = [[fmt(rows[s].depth), `depth measured at ${at(rows[s].t)}`], fc(3, 4), fc(7, 8),
+  const pk = Math.max(...f), realPk = fut.length === 8 ? ` (really ${Math.max(...fut.map(r => r.depth)).toFixed(1)} in)` : "";
+  $("res-facts").innerHTML = [[fmt(rows[s].depth), `depth measured at ${at(rows[s].t)}`], fc(3, 4),
+    [fmt(pk), `${NAME[m0]}: highest depth in the next 40 minutes${realPk}`],
     rainFc[s] ? [rainFc[s].reduce((a, b) => a + b, 0).toFixed(1) + " mm", `rain the ANN expected in the next 40 minutes${fut.length === 8 ? ` (really ${fut.reduce((a, r) => a + (r.rain || 0), 0).toFixed(1)} mm)` : ""}`]
               : [fmt(Math.max(...rows.map(r => r.depth))), "deepest water measured in this storm"]]
     .map(([v, l]) => `<div class="fact"><b>${v}</b><span>${esc(l)}</span></div>`).join("");
@@ -296,6 +333,7 @@ function showStep() {
   const rainHr = past.reduce((a, r) => a + (r.rain || 0), 0);
   $("step-say").innerHTML = `At <b>${hhmm(rows[s].t)}</b> the water was <b>${rows[s].depth.toFixed(1)} in</b> and <b>${rainHr.toFixed(1)} mm</b> of rain had fallen in the hour before. ` +
     (ann ? `The ANN expected <b>${rainFc[s].reduce((a, b) => a + b, 0).toFixed(1)} mm</b> more in the next 40 minutes${fut.length === 8 ? ` (<b>${fut.reduce((a, r) => a + (r.rain || 0), 0).toFixed(1)} mm</b> really fell)` : ""}. ` : "") +
+    (WARN ? (WARN.rules[0].alarm[s] ? `<b>Warning on:</b> water is showing on the street. ` : rows[s].depth >= 1 ? "The street is already flooded. " : "") : "") +
     `${NAME[m0]} forecast <b>${f20.toFixed(1)} in</b> for 20 minutes later` + (r20 ? `; it was really <b>${r20.depth.toFixed(1)} in</b>.` : "; that time is after your last reading, so it can't be checked yet.");
 }
 

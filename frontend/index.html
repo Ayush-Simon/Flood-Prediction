@@ -6,7 +6,7 @@
 <title>NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=11">
 
 
 </head>
@@ -162,7 +162,7 @@
         <p class="plain" id="scen-say"></p>
         <p class="note" id="scen-note"></p></div>
       <div class="box"><h3>Streets flagged by borough</h3><table id="t-boro"></table>
-        <h3 style="margin-top:22px">Flood sensors, 40 minutes ahead</h3><table id="t-sens"></table>
+        <h3 style="margin-top:22px">Flood sensors, next 40 minutes</h3><table id="t-sens"></table>
         <p class="note" id="sens-say"></p></div>
     </div>
   </section>
@@ -269,14 +269,21 @@
           <tr><td>CNN-LSTM</td><td class="n">29%</td><td class="n">82%</td><td class="n">15 min</td></tr>
           <tr><td>Bucket model + ANN rain</td><td class="n">41%</td><td class="n">92%</td><td class="n">15 min</td></tr>
           <tr><td>LSTM + perfect rain (upper bound)</td><td class="n">36%</td><td class="n">78%</td><td class="n">15 min</td></tr></table>
-        <p class="note">“Will a street under 1 inch now pass 1 inch within 40 minutes?” 1,066 test floods. The alarm level was tuned on half the storms and scored on the other half. False alarms are the share of warnings that did not come true.</p></div>
+        <p class="note">“Will a street under 1 inch now pass 1 inch within 40 minutes?” Counted per 5-minute window: 1,066 test windows before a flood. The alarm level was tuned on half the storms and scored on the other half. False alarms are the share of warnings that did not come true.</p>
+        <h3 style="margin-top:22px">Warnings, counted per flood</h3>
+        <table><tr><th>Rule</th><th class="n">Floods caught</th><th class="n">False alarms</th><th class="n">Lead</th></tr>
+          <tr class="best"><td>Warn when water shows (0.1 in or more)</td><td class="n">65%</td><td class="n">52%</td><td class="n">10 min</td></tr>
+          <tr><td>Direct classifier (XGBoost, yes/no)</td><td class="n">43%</td><td class="n">48%</td><td class="n">10 min</td></tr>
+          <tr><td>LSTM forecast</td><td class="n">55%</td><td class="n">72%</td><td class="n">10 min</td></tr>
+          <tr><td>ANN-LSTM forecast</td><td class="n">62%</td><td class="n">85%</td><td class="n">15 min</td></tr></table>
+        <p class="note">How people experience warnings: a flood counts as caught if any alarm came in the 40 minutes before it started; one continuous alarm counts once. 186 test floods. The simplest rule, “water is starting to show”, is the best warning. Waiting for two alarms in a row, or for rain in the last hour, did not help. Scripts 14b.</p></div>
       <div class="box"><h3>What the results say</h3>
         <ul class="note" style="padding-left:18px; margin:0; font-size:14px">
           <li>Water depth 5 minutes ahead is predicted well (R² 0.94). By 20 minutes the models get the shape of a flood but not its size.</li>
           <li>The standard LSTM has the lowest error of the neural models, and the gap to ANN-LSTM and CNN-LSTM is statistically significant (p ≤ 0.01).</li>
           <li>A simple physical “bucket” model with three numbers is just as accurate as the LSTM (no significant difference, p = 0.56).</li>
-          <li>Measured honestly, warnings catch about a third of floods 10–15 minutes ahead, with about four false alarms per real flood.</li>
-          <li>The rain forecast is the bottleneck, not the distance to the rain gauge: the forecast helped neither near nor far sensors.</li>
+          <li>Counted per 5-minute window, warnings catch about a third of floods with about four false alarms per real flood. Counted per flood, the rule “warn when water shows” catches 65% of floods about 10 minutes ahead, with half its alarms false.</li>
+          <li>The 40-minute forecast is not held back by the rain forecast: even the rain that really fell lifts its R² only from 0.11 to 0.19. The models judge how high a flood will get (R² 0.55 for the highest depth in the next 40 minutes) far better than the minute it peaks.</li>
         </ul>
         <h3 style="margin-top:22px">Which streets flood</h3><table id="t-road"></table>
         <p class="note">Share of flooded streets found among the riskiest 1% and 5% of streets (January to July 2026).</p></div>
@@ -286,8 +293,8 @@
   <footer>Student research prototype. Not an official warning service. Live weather and forecasts: Open-Meteo. Depth: FloodNet NYC. Rain: NOAA airport gauges via Iowa Environmental Mesonet, and Open-Meteo. Streets, drains, flood maps and 311 reports: NYC Open Data.</footer>
 </main>
 
-<script src="js/sky.js?v=9" defer></script>
-<script src="js/app.js?v=9" defer></script>
-<script src="js/ui.js?v=9" defer></script>
+<script src="js/sky.js?v=11" defer></script>
+<script src="js/app.js?v=11" defer></script>
+<script src="js/ui.js?v=11" defer></script>
 </body>
 </html>
