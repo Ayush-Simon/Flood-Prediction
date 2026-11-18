@@ -53,6 +53,51 @@ const FloodModels = (() => {
     const out = matvec(w["head.3.weight"], a, w["head.3.bias"]).map(v => Math.max(0, v * M.y_sd));
     return { depth: out, rain };
   }
-  return { predict };
+  /* The notebook's two LSTMs (scripts/15a, exported by 16b): "Improved LSTM" reads rain + depth, "Feature-enhanced LSTM"
+     also reads rainfall intensity, 15/30/60-minute rain totals and the change in rain. Each forecasts one step ahead and
+     is rolled forward 8 steps with the notebook's rainfall ANN, feeding its own forecasts back in.
+     rain, depth: the whole series from the start of the storm (raw mm and inches); now: index of the last reading. */
+  const features = (rain, depth, j) => {                              // the notebook's engineered features at row j
+    const sum = k => { let s = 0; for (let i = Math.max(0, j - k + 1); i <= j; i++) s += rain[i]; return s; };
+    return [rain[j], depth[j], rain[j] * 12, sum(3), sum(6), sum(12), j > 0 ? rain[j] - rain[j - 1] : 0];
+  };
+  const scale = (s, v, i = 0) => v * s.scale[i] + s.min[i], unscale = (s, v, i = 0) => (v - s.min[i]) / s.scale[i];
+  function nbStep(M, hist, nr) {                                      // Keras LSTM (relu) -> concat next rain -> Dense 16 relu -> Dense 1
+    const { kernel: K, recurrent: R, bias: B, units: u } = M.lstm;
+    let h = new Array(u).fill(0), c = new Array(u).fill(0);
+    for (const x of hist) {
+      const z = B.map((b, k) => { let s = b; for (let i = 0; i < x.length; i++) s += x[i] * K[i][k]; for (let i = 0; i < u; i++) s += h[i] * R[i][k]; return s; });
+      const ig = z.slice(0, u).map(sig), fg = z.slice(u, 2 * u).map(sig), cg = z.slice(2 * u, 3 * u).map(relu), og = z.slice(3 * u).map(sig);
+      c = c.map((cv, k) => fg[k] * cv + ig[k] * cg[k]); h = c.map((cv, k) => og[k] * relu(cv));
+    }
+    const v = [...h, nr], a = M.dense1.b.map((b, k) => relu(v.reduce((s, x, i) => s + x * M.dense1.W[i][k], b)));
+    return a.reduce((s, x, i) => s + x * M.dense2.W[i][0], M.dense2.b[0]);
+  }
+  function predictNB(M, rain, depth, now) {
+    const L = M.lookback, rows = [...Array(L)].map((_, k) => Math.max(0, now - L + 1 + k));   // before the first reading: repeat it
+    // stage 1: rainfall ANN on the last 75 minutes of (scaled) rain
+    let x = rows.map(j => scale(M.scale_rain, rain[j]));
+    M.ann.forEach((l, li) => { x = l.b.map((b, k) => relu(x.reduce((s, v, i) => s + v * l.W[i][k], b))); });
+    const frS = x, fr = frS.map(v => Math.max(0, unscale(M.scale_rain, v)));
+    // stage 2: one step at a time
+    const sd = M.scale_depth, out = [];
+    if (!M.enhanced) {
+      let hist = rows.map(j => [scale(M.scale_rain, rain[j]), scale(sd, depth[j])]);
+      for (let i = 0; i < M.H; i++) {
+        const b = nbStep(M, hist, frS[i]); out.push(Math.max(0, unscale(sd, b)));
+        hist = [...hist.slice(1), [frS[i], b]];
+      }
+    } else {
+      const sf = M.scale_feat, sc = f => f.map((v, i) => scale(sf, v, i));
+      let hist = rows.map(j => sc(features(rain, depth, j))), recent = rows.slice(-12).map(j => rain[j]);
+      for (let i = 0; i < M.H; i++) {
+        const e = nbStep(M, hist, frS[i]), ed = Math.max(0, unscale(sd, e)); out.push(ed);
+        recent = [...recent.slice(1), fr[i]]; const cur = recent[11], s = k => recent.slice(12 - k).reduce((a, b) => a + b, 0);
+        hist = [...hist.slice(1), sc([cur, ed, cur * 12, s(3), s(6), s(12), cur - recent[10]])];
+      }
+    }
+    return { depth: out, rain: fr };
+  }
+  return { predict, predictNB, features };
 })();
 if (typeof module !== "undefined") module.exports = FloodModels;

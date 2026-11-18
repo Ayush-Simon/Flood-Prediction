@@ -1,7 +1,8 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
-const C = { rain:"#8fd0ff", flood:"#ff6a5c", warn:"#ffb648", watch:"#e9d66b", route:"#c9b5ff", soft:"rgba(232,240,241,.7)", line:"rgba(255,255,255,.1)", ink:"#f2f6f6", ok:"#74e3b5" };
+// colours for a light page (classic theme); the map keeps its own dark overlays
+const C = { rain:"#2a7fd4", flood:"#d0362a", warn:"#e08a00", watch:"#c9a400", route:"#8a6df0", soft:"#6e6e6e", line:"rgba(0,0,0,.09)", ink:"#333", ok:"#2a8f5b" };
 const BODY = getComputedStyle(document.documentElement).getPropertyValue("--body");
 const NICE = { "ANN-LSTM (LSTM + ANN rain forecast)": "ANN-LSTM", "CNN-LSTM + ANN rain forecast": "CNN-LSTM + ANN rain", "LSTM (standard)": "LSTM", "Persistence": "Persistence (baseline)",
   "LSTM + perfect rain forecast": "LSTM + perfect rain (upper bound)", "CNN-LSTM + perfect rain forecast": "CNN-LSTM + perfect rain (upper bound)", "XGBoost (no future rain)": "XGBoost",
@@ -10,10 +11,10 @@ const NICE = { "ANN-LSTM (LSTM + ANN rain forecast)": "ANN-LSTM", "CNN-LSTM + AN
 const nice = m => NICE[m] || m;
 const MINE = new Set(["ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM", "CNN-LSTM + ANN rain forecast"]);
 const LIVE_MODELS = ["CNN-LSTM", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM + ANN rain forecast", "LSTM (standard)", "Persistence"];   // need no future data
-const STYLE = { "Persistence": ["#a9b8c2", [4,4]], "LSTM (standard)": ["#8fd0ff", []], "ANN-LSTM (LSTM + ANN rain forecast)": ["#ffb648", []], "CNN-LSTM": ["#ff6a5c", []],
-  "CNN-LSTM + ANN rain forecast": ["#ff9ec4", []], "LSTM + perfect rain forecast": ["#74e3b5", [2,3]], "CNN-LSTM + perfect rain forecast": ["#ff6a5c", [2,3]],
-  "XGBoost (no future rain)": ["#e9d66b", []], "XGBoost + perfect rain forecast": ["#e9d66b", [2,3]], "Att-LSTM + perfect rain forecast": ["#c9b5ff", [2,3]],
-  "Att-LSTM + perfect forecast + terrain": ["#c9b5ff", [6,3]], "Att-LSTM + nowcast + terrain (realistic)": ["#c9b5ff", []] };
+const STYLE = { "Persistence": ["#8c8c8c", [4,4]], "LSTM (standard)": ["#2a7fd4", []], "ANN-LSTM (LSTM + ANN rain forecast)": ["#e08a00", []], "CNN-LSTM": ["#d0362a", []],
+  "CNN-LSTM + ANN rain forecast": ["#c2185b", []], "LSTM + perfect rain forecast": ["#2a8f5b", [2,3]], "CNN-LSTM + perfect rain forecast": ["#d0362a", [2,3]],
+  "XGBoost (no future rain)": ["#b8960a", []], "XGBoost + perfect rain forecast": ["#b8960a", [2,3]], "Att-LSTM + perfect rain forecast": ["#7357c9", [2,3]],
+  "Att-LSTM + perfect forecast + terrain": ["#7357c9", [6,3]], "Att-LSTM + nowcast + terrain (realistic)": ["#7357c9", []] };
 const DEFAULT_ON = new Set(["LSTM (standard)", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM"]);
 const GAUGE = { NYC:["Central Park", "#8fd0ff"], LGA:["LaGuardia", "#c9b5ff"], JFK:["JFK", "#74e3b5"] };
 const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
@@ -34,7 +35,7 @@ function chart(cv, o) {
   { const room = Math.max(1, Math.floor((X(n - 1) - X(0)) / 46)), tk = Math.max(o.tick, Math.ceil((n - 1) / room / o.tick) * o.tick);
     for (let i = 0; i < n; i += tk) { const x = X(i), s = o.label(i), w = g.measureText(s).width;
       g.fillText(s, Math.min(Math.max(x, w / 2 + 1), W - w / 2 - 1), H - 6); } }
-  if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = "rgba(255,255,255,.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
+  if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = "rgba(0,0,0,.4)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
   for (const s of o.series) {
     const yy = s.y2 ? Y2 : Y;
     if (s.bars) { g.fillStyle = s.color; const w = Math.max(1, (W - L - R) / n - 2); s.data.forEach((v, i) => { if (v) g.fillRect(X(i) - w / 2, yy(v), w, yy(0) - yy(v)); }); continue; }
@@ -377,7 +378,7 @@ function setTime(t) {
   }
   if (!WB) $("clock-note").textContent = "";
   if (typeof skyAt === "function") skyAt(T);
-  if (slot !== lastSlot) { lastSlot = slot; sensorList(); if (sensorId && MODE === "past") drawDepth(); }
+  if (slot !== lastSlot) { lastSlot = slot; sensorList(); if (sensorId && MODE === "past") drawDepth(); if (MODE === "past") rainPast(slot); }
   draw();
 }
 const sensorState = v => v == null || v <= 0.5 ? "dry" : v >= 4 ? "flood" : "wet";
@@ -411,6 +412,139 @@ function play() { if (playing) { playing = false; $("play").textContent = "▶";
   let [a, b] = rainSpan(); if (MODE === "live") a = NOW_SLOT; if (!played || T >= b - 1) setTime(a); played = true;
   playing = true; lastFrame = 0; $("play").textContent = "❚❚"; requestAnimationFrame(frame); }
 
+
+/* ---------------------------------------------------------------- raining now: depth 5, 15, 30 and 40 minutes ahead
+   The live model (ANN rain forecast -> CNN-LSTM) forecasts every sensor 5 to 40 minutes ahead; four of those steps are shown,
+   each with how far it was off on the July-October 2026 test storms (typical miss = RMSE, flood-related windows).
+   TRUST is measured on this exact model file by scripts/16a_rain_now_past.py (7,028 flood-related test windows). */
+const NOW_STEPS = [[0, 5], [2, 15], [5, 30], [7, 40]];
+const TRUST = { 5: [1.2, 0.80], 15: [1.8, 0.53], 30: [2.3, 0.21], 40: [2.5, 0.08] };
+function trustTable(el) {
+  table(el, ["How far to trust it", "", ...NOW_STEPS.map(([, m]) => `${m} min`)],
+    [["Typical miss on 2026 test storms", "", ...NOW_STEPS.map(([, m]) => "± " + TRUST[m][0].toFixed(1) + " in")],
+     ["R² (1 = perfect, 0 = no better than the average)", "", ...NOW_STEPS.map(([, m]) => TRUST[m][1].toFixed(2))]]);
+}
+
+/* ---------------------------------------------------------------- raining now, on a past storm
+   q.nc[m][p]: the main model's depth forecast made at slot p for m minutes later (scripts/16a_rain_now_past.py);
+   q.ncr[m][p]: the rain its ANN expected by then; q.obs[p + m/5]: what the sensor really measured. */
+const RP_MIN = [5, 15, 30, 40];
+const cityRain = (st, a, b) => { const gs = Object.values(st.gauges || {}); if (!gs.length) return 0; let s = 0, n = 0;
+  for (const g of gs) { let v = 0, ok = false; for (let i = Math.max(0, a); i <= Math.min(287, b); i++) if (g[i] != null) { v += g[i]; ok = true; } if (ok) { s += v; n++; } } return n ? s / n : 0; };
+const ncSensors = st => st.sensors.filter(q => q.nc);
+function rpHeavy(st) { let best = -1, bv = -1; const qs = ncSensors(st);
+  for (let p = 0; p < 288; p++) { if (!qs.some(q => q.nc["5"][p] != null)) continue; const r = cityRain(st, p - 2, p); if (r > bv) { bv = r; best = p; } } return best; }
+function rainPast(p) {
+  const st = STORM; if (!st || MODE !== "past") return;
+  const qs = ncSensors(st), on = p != null && qs.some(q => q.nc["5"][p] != null);
+  $("rp-time").value = p ?? 0; $("rp-clock").textContent = slotLabel(p ?? 0);
+  trustTable("t-rp-trust");
+  if (!qs.length) {
+    $("rp-title").textContent = st.has_pred ? "No sensor had water in this storm" : "No forecasts for this storm";
+    $("rp-say").textContent = st.has_pred ? "The flood sensors stayed dry all day, so there is nothing to forecast." : "The 5 to 40 minute forecasts exist for July to October 2026, the months the model was tested on. Pick one of those storms above.";
+    $("t-rp").innerHTML = ""; $("rp-note").textContent = ""; $("fe-box").hidden = true; return;
+  }
+  const r15 = cityRain(st, p - 2, p), raining = r15 > 0;
+  $("rp-title").textContent = `${slotLabel(p)} on ${fmtDate(st.date)}: ` + (raining ? `it is raining, ${r15.toFixed(1)} mm in the last 15 minutes` : "no rain in the last 15 minutes");
+  if (!on) {
+    $("rp-say").textContent = "The model only runs while a storm is on at a sensor (from an hour before the water to after it drains). Move the time, or press “Heaviest rain”.";
+    $("t-rp").innerHTML = ""; $("rp-note").textContent = ""; fePast(p, []); return;
+  }
+  const at = (q, m) => q.nc[m][p], real = (q, m) => p + m / 5 <= 287 ? q.obs[p + m / 5] : null;
+  const live = qs.filter(q => q.nc["5"][p] != null);
+  const peak = q => Math.max(0, ...RP_MIN.map(m => at(q, m) || 0), ...RP_MIN.map(m => real(q, m) || 0), q.obs[p] || 0);
+  const list = live.filter(q => peak(q) >= 0.05).sort((a, b) => peak(b) - peak(a)).slice(0, 10);
+  const cls = v => v == null ? "" : v >= 4 ? "flood" : v >= 0.05 ? "wet" : "dry";
+  const cell = (f, r) => `<td class="n rp"><b class="${cls(f)}">${esc(fmtIn(f))}</b><small>really ${esc(fmtIn(r))}</small></td>`;
+  const cnt = (m, real) => live.filter(q => ((real ? (p + m / 5 <= 287 ? q.obs[p + m / 5] : null) : at(q, m)) || 0) >= 1).length;
+  const rainBy = m => live.reduce((a, q) => a + (q.ncr[m][p] || 0), 0) / live.length;
+  let h = `<tr><th>Sensor</th><th class="n">Now (measured)</th>${RP_MIN.map(m => `<th class="n">In ${m} min</th>`).join("")}</tr>`;
+  h += `<tr class="rp-sum"><td>Sensors at 1 in or more</td><td class="n">${live.filter(q => (q.obs[p] || 0) >= 1).length} of ${live.length}</td>${RP_MIN.map(m => `<td class="n rp"><b>${cnt(m)} of ${live.length}</b><small>really ${cnt(m, true)}</small></td>`).join("")}</tr>`;
+  h += `<tr class="rp-sum"><td>Rain by then (city average)</td><td class="n">${r15.toFixed(1)} mm last 15 min</td>${RP_MIN.map(m => `<td class="n rp"><b>${rainBy(m).toFixed(1)} mm</b><small>really ${cityRain(st, p + 1, p + m / 5).toFixed(1)} mm</small></td>`).join("")}</tr>`;
+  h += list.map(q => `<tr><td>${esc(shortName(q.name))}</td><td class="n"><b class="${cls(q.obs[p])}">${esc(fmtIn(q.obs[p]))}</b></td>${RP_MIN.map(m => cell(at(q, m), real(q, m))).join("")}</tr>`).join("");
+  if (!list.length) h += `<tr><td colspan="6" style="color:var(--soft)">All ${live.length} sensors are dry now and forecast to stay dry for 40 minutes.</td></tr>`;
+  $("t-rp").innerHTML = h;
+  const top = list[0];
+  $("rp-say").textContent = !top ? (raining ? "It is raining, but the model expects no water at any sensor in the next 40 minutes." : "No water now and none expected in the next 40 minutes.")
+    : `Deepest at ${shortName(top.name)}: now ${fmtIn(top.obs[p])}; forecast ${RP_MIN.map(m => `${fmtIn(at(top, m))} in ${m} min`).join(", ")}. It really measured ${RP_MIN.map(m => fmtIn(real(top, m))).join(", ")}.`;
+  fePast(p, list);
+  $("rp-note").textContent = `Forecast made at ${slotLabel(p)} from the last hour of water depth and rain at each sensor's nearest gauge, nothing later. Big number: the forecast. “Really”: what the sensor measured then. ${live.length} sensors had the model running at this moment; sensors that stayed dry are left out of the list. Times are New York time.`;
+}
+function rainNow(L, raining) {
+  const sens = L.sensors.filter(s => s.fc), w = L.weather || {};
+  if (!sens.length) { $("rainnow-box").hidden = true; return; }
+  $("rainnow-box").hidden = false;
+  const peak = s => Math.max(0, ...s.fc.map(v => v || 0)), top = sens.slice().sort((a, b) => peak(b) - peak(a)).slice(0, 8);
+  const rainBy = k => sens.reduce((a, s) => a + (s.rain_fc || []).slice(0, k + 1).reduce((x, y) => x + y, 0), 0) / sens.length;
+  const nowCell = s => L.depth_connected && s.now != null ? fmtIn(s.now) : "not measured";
+  const head = ["Sensor", "Now", ...NOW_STEPS.map(([, m]) => `In ${m} min`)];
+  const rows = [["Whole city: sensors at 1 in or more", L.depth_connected ? String(sens.filter(s => (s.now || 0) >= 1).length) : "–", ...NOW_STEPS.map(([k]) => `${sens.filter(s => (s.fc[k] || 0) >= 1).length} of ${sens.length}`)],
+    ["Rain expected by then (ANN, city average)", (w.rain_now ?? 0) + " mm now", ...NOW_STEPS.map(([k]) => rainBy(k).toFixed(1) + " mm")],
+    ...top.map(s => [shortName(s.name), nowCell(s), ...NOW_STEPS.map(([k]) => fmtIn(s.fc[k]))])];
+  table("t-rainnow", head, rows);
+  trustTable("t-trust");
+  const deepS = top[0], deep15 = deepS ? deepS.fc[2] : 0, anyWater = sens.some(s => s.fc.some(v => v >= 0.05));
+  $("rainnow-title").textContent = raining ? `It is raining now: flood depth in 5, 15, 30 and 40 minutes` : `Not raining now: flood depth in 5, 15, 30 and 40 minutes`;
+  $("rainnow-say").textContent = !anyWater ? (raining ? `It is raining (${w.rain_now ?? 0} mm in the last 15 minutes), but not hard enough for any sensor to get water in the next 40 minutes.` : "No sensor is forecast to get water in the next 40 minutes.")
+    : `${raining ? `It is raining (${w.rain_now ?? 0} mm in the last 15 minutes). ` : ""}The deepest water is expected at ${shortName(deepS.name)}: ${fmtIn(deepS.fc[0])} in 5 minutes, ${fmtIn(deep15)} in 15, ${fmtIn(deepS.fc[5])} in 30 and ${fmtIn(deepS.fc[7])} in 40.`;
+  $("rainnow-note").textContent = (L.depth_connected ? "" : "Live sensor depths are not connected, so each forecast starts from a dry street: where water is already standing, real depths will be higher. ")
+    + `Forecast made ${L.now_local} by the ANN rain forecast and CNN-LSTM. The further ahead, the less exact: by 40 minutes the depth is a rough guide, so use “Highest in 40 min” in Today’s prediction for planning.`;
+}
+
+/* ---------------------------------------------------------------- Improved LSTM vs Feature-enhanced LSTM (notebook models, scripts/15a + 16b)
+   q.fe.imp / q.fe.enh [m][p]: forecast made at slot p for m minutes later; q.rn[p]: rain at the sensor's gauge (mm per 5 min). */
+const FE_COND = [   // nb_rainfall_condition_analysis_nyc.csv: condition, points, [RMSE, R²] improved, [RMSE, R²] feature-enhanced
+  ["No rain", 37891, [1.24, 0.71], [1.56, 0.53]], ["Light rain (up to 0.3 mm)", 8187, [1.62, 0.47], [1.56, 0.51]],
+  ["Moderate rain (0.3 to 0.8 mm)", 4097, [2.69, 0.31], [2.66, 0.32]], ["Heavy rain (over 0.8 mm)", 4513, [4.12, 0.01], [3.95, 0.09]],
+  ["Rapidly increasing rain", 3250, [3.49, 0.06], [3.35, 0.13]]];
+const FE_COL = { imp: "#2a7fd4", enh: "#c2185b" }, FE_NAME = { imp: "Improved LSTM", enh: "Feature-enhanced LSTM" };
+function feCond() {
+  const max = Math.max(...FE_COND.flatMap(r => [r[2][0], r[3][0]]));
+  $("fe-cond").innerHTML = FE_COND.map(([c, n, a, b]) => `<div class="hb"><span class="hb-l">${esc(c)} <small>${n.toLocaleString()} checks</small></span>` +
+    [["imp", a], ["enh", b]].map(([k, v]) => `<span class="hb-r"><i style="width:${(v[0] / max * 100).toFixed(1)}%; background:${FE_COL[k]}"></i><em>${v[0].toFixed(2)} in · R² ${v[1].toFixed(2)}</em></span>`).join("") + "</div>").join("") +
+    `<div class="keys" style="margin-top:8px"><span><i style="background:${FE_COL.imp}"></i>Improved LSTM</span><span><i style="background:${FE_COL.enh}"></i>Feature-enhanced LSTM</span></div>`;
+}
+function fePast(p, order) {
+  const st = STORM, qs = st.sensors.filter(q => q.fe), box = $("fe-box");
+  if (!qs.length) { box.hidden = true; return; } box.hidden = false; feCond();
+  const on = qs.filter(q => q.fe.imp["5"][p] != null);
+  const real = (q, m) => p + m / 5 <= 287 ? q.obs[p + m / 5] : null, f1 = v => v == null ? "–" : fmtIn(v);
+  // storm accuracy (does not depend on the moment)
+  const acc = { imp: RP_MIN.map(() => [0, 0]), enh: RP_MIN.map(() => [0, 0]) };
+  for (const q of qs) for (let t = 0; t < 288; t++) {
+    if (q.fe.imp["5"][t] == null) continue;
+    const wet = q.obs.slice(Math.max(0, t - 11), Math.min(288, t + 9)).some(v => (v || 0) > 0); if (!wet) continue;
+    RP_MIN.forEach((m, i) => { const a = t + m / 5 <= 287 ? q.obs[t + m / 5] : null; if (a == null) return;
+      for (const k of ["imp", "enh"]) { const e = q.fe[k][m][t] - a; acc[k][i][0] += e * e; acc[k][i][1]++; } });
+  }
+  const rm = (k, i) => acc[k][i][1] ? Math.sqrt(acc[k][i][0] / acc[k][i][1]) : null;
+  $("t-fe-acc").innerHTML = `<tr><th>Model</th>${RP_MIN.map(m => `<th class="n">${m} min</th>`).join("")}</tr>` + ["imp", "enh"].map(k => `<tr><td style="color:${FE_COL[k]}">${FE_NAME[k]}</td>${RP_MIN.map((_, i) => {
+    const a = rm(k, i), o = rm(k === "imp" ? "enh" : "imp", i); return `<td class="n">${a == null ? "–" : (o != null && a < o ? `<b>${a.toFixed(2)}</b>` : a.toFixed(2))}</td>`; }).join("")}</tr>`).join("");
+  if (!on.length) {
+    $("fe-say").textContent = "Neither model is running at this moment (it runs while a storm is on at a sensor). Move the time above.";
+    $("t-fe").innerHTML = ""; $("t-feat").innerHTML = ""; $("feat-title").textContent = "What the Feature-enhanced LSTM reads"; return;
+  }
+  const list = (order || []).filter(q => q.fe && q.fe.imp["5"][p] != null).slice(0, 6);
+  const show = list.length ? list : on.slice(0, 3);
+  let wins = { imp: 0, enh: 0 };
+  let h = `<tr><th>Sensor</th><th>Model</th><th class="n">Now</th>${RP_MIN.map(m => `<th class="n">In ${m} min</th>`).join("")}</tr>`;
+  for (const q of show) {
+    const err = k => RP_MIN.map(m => real(q, m) == null ? null : Math.abs(q.fe[k][m][p] - real(q, m)));
+    const ei = err("imp"), ee = err("enh");
+    ei.forEach((v, i) => { if (v != null && ee[i] != null && Math.abs(v - ee[i]) >= 0.05) wins[v < ee[i] ? "imp" : "enh"]++; });
+    const row = (k, e, o, first) => `<tr class="${first ? "fe-first" : ""}">${first ? `<td rowspan="3">${esc(shortName(q.name))}</td>` : ""}<td style="color:${FE_COL[k]}">${FE_NAME[k]}</td><td class="n">${first ? f1(q.obs[p]) : ""}</td>` +
+      RP_MIN.map((m, i) => `<td class="n">${e[i] != null && o[i] != null && e[i] + 0.05 <= o[i] ? `<b>${f1(q.fe[k][m][p])}</b>` : f1(q.fe[k][m][p])}</td>`).join("") + "</tr>";
+    h += row("imp", ei, ee, true) + row("enh", ee, ei, false) + `<tr class="real"><td>Really</td><td class="n"></td>${RP_MIN.map(m => `<td class="n">${real(q, m) == null ? "?" : f1(real(q, m))}</td>`).join("")}</tr>`;
+  }
+  $("t-fe").innerHTML = h;
+  $("fe-say").innerHTML = `At ${slotLabel(p)}, for the ${show.length} sensor${show.length > 1 ? "s" : ""} below: the <b>Improved LSTM</b> was closer ${wins.imp} time${wins.imp === 1 ? "" : "s"}, the <b>Feature-enhanced LSTM</b> ${wins.enh} time${wins.enh === 1 ? "" : "s"} (ties within 0.05 in not counted). Bold marks the closer forecast.`;
+  // the features at the top sensor, last 30 minutes
+  const q = show[0], rn = q.rn || [], val = j => rn[j] ?? 0, sum = (j, k) => { let s = 0; for (let i = Math.max(0, j - k + 1); i <= j; i++) s += val(i); return s; };
+  $("feat-title").textContent = `What the Feature-enhanced LSTM reads at ${shortName(q.name)}`;
+  const js = [...Array(6)].map((_, k) => p - 5 + k).filter(j => j >= 0);
+  $("t-feat").innerHTML = `<tr><th>Time</th><th class="n">Rain (mm)</th><th class="n">Depth (in)</th><th class="n">Intensity (mm/h)</th><th class="n">15-min total</th><th class="n">30-min total</th><th class="n">60-min total</th><th class="n">Change</th></tr>` +
+    js.map(j => `<tr${j === p ? ' class="real"' : ""}><td>${slotLabel(j)}${j === p ? " (now)" : ""}</td><td class="n">${val(j).toFixed(2)}</td><td class="n">${(q.obs[j] ?? 0).toFixed(1)}</td><td class="n">${(val(j) * 12).toFixed(1)}</td><td class="n">${sum(j, 3).toFixed(2)}</td><td class="n">${sum(j, 6).toFixed(2)}</td><td class="n">${sum(j, 12).toFixed(2)}</td><td class="n">${(j > 0 ? val(j) - val(j - 1) : 0).toFixed(2)}</td></tr>`).join("");
+}
 
 /* ---------------------------------------------------------------- today's prediction (live model output) */
 function today(L) {
@@ -531,7 +665,7 @@ async function loadLive() {
     : "<tr><td>Gauge readings are not available right now.</td></tr>";
   $("map-lede").textContent = L.what_if ? "Less than 5 mm of rain is forecast for the next 24 hours, so every street is shown clear. Streets light up here when a storm is on the way." : "The map shows the streets as they are now: clear unless rain is falling. Press play, or drag the slider, to see which streets the forecast rain would flood over the next 22 hours and how the safe route changes. Diamonds are flood sensors with the CNN-LSTM depth forecast.";
   $("rep-note").textContent = L.what_if ? "No streets flagged." : `${L.expected_reports} streets are expected to get a flooding report.`;
-  paintStreets(L); drawTimeline(); setTime(NOW_SLOT); today(L); if (typeof heroLive === "function") heroLive(L); return true;
+  paintStreets(L); drawTimeline(); setTime(NOW_SLOT); today(L); rainNow(L, raining); if (typeof heroLive === "function") heroLive(L); return true;
 }
 async function setMode(m) {
   MODE = m; document.body.className = m;
@@ -567,6 +701,7 @@ async function loadStorm(date) {
   }
   drawTimeline();
   let peak = 0; for (let t = 0; t < 288; t++) if (floodedNow(t) > floodedNow(peak)) peak = t;
+  if (!ncSensors(st).some(q => q.nc["5"][peak] != null)) { const h = rpHeavy(st); if (h >= 0) peak = h; }   // open where the depth model is running
   setTime(peak);
 
   // weather + rain
@@ -621,6 +756,9 @@ async function init() {
     $("model").onchange = e => { model = e.target.value; lastSlot = -1; setTime(T); };
     $("ahead").onchange = e => { ahead = e.target.value; horizon = ahead; segSync(); lastSlot = -1; setTime(T); };
     $("time").oninput = e => { if (playing) play(); setTime(+e.target.value); }; $("play").onclick = play;
+    const rpGo = t => { if (playing) play(); setTime(Math.max(0, Math.min(287, t))); };
+    $("rp-time").oninput = e => rpGo(+e.target.value); $("rp-back").onclick = () => rpGo(Math.floor(T) - 1); $("rp-fwd").onclick = () => rpGo(Math.floor(T) + 1);
+    $("rp-heavy").onclick = () => { const h = rpHeavy(STORM); if (h >= 0) rpGo(h); };
     $("sensor").onchange = e => selectSensor(e.target.value);
     $("h-seg").innerHTML = ["5", "20", "40"].map(h => `<button data-h="${h}">${h} min ahead</button>`).join("");
     const segSync = () => $("h-seg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.h === horizon));
@@ -634,7 +772,7 @@ async function init() {
     const dRows = R.depth.filter(r => keepD.has(r[0])).sort((a, b) => [...keepD].indexOf(a[0]) - [...keepD].indexOf(b[0]));
     table("t-depth", ["Model", "R² 5 min", "R² 20 min", "R² 40 min", "Caught early"], dRows.map(r => [nice(r[0]), r[1].toFixed(2), r[2].toFixed(2), r[3].toFixed(2), r[7] + "%"]), 2, false, dRows.map(r => r[0]));
     table("t-road", ["Model", "Top 1%", "Top 5%"], R.road.map(r => [r[0], r[1] + "%", r[2] + "%"]), 1);
-    await setMode(INDEX.storms.some(s => s.date === want) ? "past" : "live");
+    await setMode(want === "live" ? "live" : "past");                         // opens on a past storm; #live opens the live view
     setInterval(() => { if (MODE === "live") loadLive(); }, 60000);
     let rz = 0; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => setMode(MODE), 250); });
   } catch (e) {

@@ -6,8 +6,9 @@
 <title>Model Lab · NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css?v=7">
-<link rel="stylesheet" href="css/lab.css?v=7">
+<link rel="stylesheet" href="css/style.css?v=10">
+<link rel="stylesheet" href="css/lab.css?v=10">
+<link rel="stylesheet" href="css/classic.css?v=1">
 </head>
 <body class="live lab">
 <canvas id="sky" aria-hidden="true"></canvas>
@@ -46,7 +47,7 @@
     <div class="box">
       <h3>2. The model</h3>
       <div class="seg" id="model-seg" role="group" aria-label="Model">
-        <button data-m="ann_lstm" aria-pressed="true">ANN-LSTM</button><button data-m="cnn_lstm" aria-pressed="false">CNN-LSTM</button><button data-m="both" aria-pressed="false">Both</button>
+        <button data-m="live" aria-pressed="true">Main model</button><button data-m="ann_lstm" aria-pressed="false">ANN-LSTM</button><button data-m="cnn_lstm" aria-pressed="false">CNN-LSTM</button><button data-m="all" aria-pressed="false">All three</button><button data-m="fe" aria-pressed="false">Improved vs Feature-enhanced LSTM</button>
       </div>
       <div class="model-info" id="model-info"></div>
       <h3 style="margin-top:22px">3. Run it</h3>
@@ -76,12 +77,27 @@
         <div><canvas class="chart" id="c-next" style="height:270px"></canvas><div class="keys" id="k-next"></div>
           <p class="note">Drag the slider or press Play to move through the storm. The shaded box on the chart above shows the same hour.</p></div>
         <div>
-          <h4>1. What the model reads: the last hour, 12 readings</h4><div class="tablewrap"><table class="io" id="t-in"></table></div>
+          <h4 id="in-title">1. What the model reads: the last hour, 12 readings</h4><div class="tablewrap"><table class="io" id="t-in"></table></div>
+          <div id="feat-wrap" hidden><h4>1b. The extra rain features the Feature-enhanced LSTM reads</h4><div class="tablewrap"><table class="io" id="t-feat-lab"></table></div></div>
           <h4>2. What it outputs: depth for the next 8 steps (minutes ahead)</h4><div class="tablewrap"><table class="io" id="t-out"></table></div>
           <p class="note">This is the trained network running on these exact numbers: the same weights that were learned from 2020–2025 storms. "?" means after your last reading.</p>
         </div>
       </div>
     </div>
+
+    <div class="box" style="margin-top:18px" id="rn-box">
+      <div class="chart-head"><h3 id="rn-title">Raining now: the flood in 5, 15, 30 and 40 minutes</h3>
+        <div class="stepctl"><button type="button" id="rn-back" aria-label="5 minutes earlier">◀ 5 min</button><button type="button" id="rn-fwd" aria-label="5 minutes later">5 min ▶</button><button type="button" id="rn-heavy">Heaviest rain</button></div></div>
+      <p class="step-say" id="rn-say"></p>
+      <div class="tablewrap"><table class="io" id="t-rn"></table></div>
+      <h4 style="margin-top:16px">How well it did at these four times, over all of your data</h4>
+      <div class="tablewrap"><table class="io" id="t-rn-acc"></table></div>
+      <p class="note">Stand at the moment chosen above (the buttons move it too). Each forecast uses only the hour up to that moment. “Really” is the depth your data shows then; “?” means after your last reading. Typical miss is RMSE in inches over every moment that can be checked; R² near 1 is good.</p>
+    </div>
+
+    <div class="box" style="margin-top:18px"><h3>Under different rainfall conditions</h3>
+      <div class="hbars" id="cond-bars"></div>
+      <p class="note" id="cond-note">Typical miss (RMSE, inches) at all 8 forecast times, grouped by the rain that fell in the 5 minutes being forecast, as in the notebook. Only moments with water in the hour before or the 40 minutes after. Light rain is one gauge tip (up to 0.3 mm), moderate up to 0.8 mm, heavy above; “rapidly increasing” is rain that rose by 0.51 mm or more since the step before.</p></div>
 
     <div class="box" style="margin-top:18px"><h3>How close it was on this data</h3><table id="t-acc"></table>
       <p class="note">Only rows where the real depth later is known. RMSE: typical miss in inches, lower is better. R² near 1 is good, 0 is no better than the average. “Highest in 40 min” is the deepest water in the next 40 minutes, whenever it comes: the models judge this much better than the exact minute (on the 2026 test storms R² 0.55 against 0.11).</p></div>
@@ -112,9 +128,9 @@
 
   <footer>The models were trained on New York FloodNet sensors and airport rain gauges (2021–2025) and tested on July–October 2026. On other places or rain sources they may be less accurate. Runs entirely in your browser; nothing you paste is uploaded.</footer>
 </main>
-<script src="js/sky.js?v=7" defer></script>
-<script src="js/models.js?v=7" defer></script>
-<script src="js/lab.js?v=7" defer></script>
+<script src="js/sky.js?v=10" defer></script>
+<script src="js/models.js?v=10" defer></script>
+<script src="js/lab.js?v=10" defer></script>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden><i aria-hidden="true">✓</i><div><b></b><span></span></div></div>
 </body>
 </html>

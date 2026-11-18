@@ -37,14 +37,14 @@ function drawWaveAt(vals, hi, prog) {
     g.lineTo(W, pts[n - 1][1]); };
   g.save(); g.beginPath(); g.rect(0, 0, W * prog, H); g.clip();
   path(); g.lineTo(W, H); g.lineTo(0, H); g.closePath();
-  const fill = g.createLinearGradient(0, 0, 0, H); fill.addColorStop(0, "rgba(255,255,255,.22)"); fill.addColorStop(1, "rgba(255,255,255,0)");
+  const fill = g.createLinearGradient(0, 0, 0, H); fill.addColorStop(0, "rgba(42,127,212,.22)"); fill.addColorStop(1, "rgba(42,127,212,0)");
   g.fillStyle = fill; g.fill();
-  path(); g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 2; g.shadowColor = "rgba(255,255,255,.6)"; g.shadowBlur = 8; g.stroke(); g.shadowBlur = 0;
+  path(); g.strokeStyle = "rgba(42,127,212,.85)"; g.lineWidth = 2; g.shadowColor = "rgba(42,127,212,.6)"; g.shadowBlur = 8; g.stroke(); g.shadowBlur = 0;
   if (hi != null && hi >= 0) {
     const [x, y] = pts[Math.min(n - 1, hi)];
-    const beam = g.createLinearGradient(0, 0, 0, H); beam.addColorStop(0, "rgba(255,255,255,0)"); beam.addColorStop(0.5, "rgba(255,255,255,.7)"); beam.addColorStop(1, "rgba(255,255,255,0)");
+    const beam = g.createLinearGradient(0, 0, 0, H); beam.addColorStop(0, "rgba(42,127,212,0)"); beam.addColorStop(0.5, "rgba(42,127,212,.7)"); beam.addColorStop(1, "rgba(42,127,212,0)");
     g.fillStyle = beam; g.fillRect(x - 0.75, 0, 1.5, H);
-    const glow = g.createRadialGradient(x, y, 0, x, y, 22); glow.addColorStop(0, "rgba(255,255,255,.95)"); glow.addColorStop(1, "rgba(255,255,255,0)");
+    const glow = g.createRadialGradient(x, y, 0, x, y, 22); glow.addColorStop(0, "rgba(42,127,212,.95)"); glow.addColorStop(1, "rgba(42,127,212,0)");
     g.fillStyle = glow; g.globalAlpha = prog < 1 ? Math.max(0, (prog * W - x) / 60 + 1) * prog : 1; g.beginPath(); g.arc(x, y, 22, 0, 7); g.fill(); g.globalAlpha = 1;
   }
   g.restore();

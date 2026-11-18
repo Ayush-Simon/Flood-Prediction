@@ -2,10 +2,10 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const COL = { ann_lstm: "#ffb648", cnn_lstm: "#ff6a5c", persist: "#a9b8c2", depth: "#f2f6f6", rain: "rgba(143,208,255,.55)", soft: "rgba(232,240,241,.7)", line: "rgba(255,255,255,.1)" };
-const NAME = { ann_lstm: "ANN-LSTM", cnn_lstm: "CNN-LSTM", persist: "Persistence (baseline)" };
+const COL = { live: "#7357c9", lstm_improved: "#2a7fd4", lstm_features: "#c2185b", ann_lstm: "#e08a00", cnn_lstm: "#d0362a", persist: "#8c8c8c", depth: "#333333", rain: "rgba(42,127,212,.45)", soft: "#6e6e6e", line: "rgba(0,0,0,.09)" };   // light page (classic theme)
+const NAME = { live: "Main model", lstm_improved: "Improved LSTM", lstm_features: "Feature-enhanced LSTM", ann_lstm: "ANN-LSTM", cnn_lstm: "CNN-LSTM", persist: "Persistence (baseline)" };
 const BODY = getComputedStyle(document.documentElement).getPropertyValue("--body");
-const M = {}; let SAMPLES = [], choice = "ann_lstm", ahead = 3, RES = null, STEP = 11, PLAY = null;
+const M = {}; let SAMPLES = [], choice = "live", ahead = 3, RES = null, STEP = 11, PLAY = null;
 const fmt = v => v == null || isNaN(v) ? "–" : v.toFixed(1) + " in";
 
 /* ------------------------------------------------------------ chart: lines on the left axis, rain bars on the right */
@@ -24,9 +24,9 @@ function chart(cv, o) {
   g.textAlign = "center";   // about one label per 52 px, kept inside the canvas
   const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - L - R) / 52))));
   for (let i = 0; i < n; i += step) { const s = o.label(i), w = g.measureText(s).width; g.fillText(s, Math.min(Math.max(X(i), w / 2 + 1), W - w / 2 - 1), H - 8); }
-  if (o.shade) { g.fillStyle = "rgba(255,255,255,.07)"; g.fillRect(X(o.shade[0]), T, X(o.shade[1]) - X(o.shade[0]), H - T - B);
-    g.strokeStyle = "rgba(255,255,255,.35)"; g.strokeRect(X(o.shade[0]) + .5, T + .5, X(o.shade[1]) - X(o.shade[0]), H - T - B); }
-  if (o.mark != null) { g.strokeStyle = "rgba(255,255,255,.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
+  if (o.shade) { g.fillStyle = "rgba(0,0,0,0.07)"; g.fillRect(X(o.shade[0]), T, X(o.shade[1]) - X(o.shade[0]), H - T - B);
+    g.strokeStyle = "rgba(0,0,0,0.35)"; g.strokeRect(X(o.shade[0]) + .5, T + .5, X(o.shade[1]) - X(o.shade[0]), H - T - B); }
+  if (o.mark != null) { g.strokeStyle = "rgba(0,0,0,0.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
   if (o.bars) { g.fillStyle = COL.rain; const bw = Math.max(1, (W - L - R) / n - 1); o.bars.forEach((v, i) => { if (v) g.fillRect(X(i) - bw / 2, YB(v), bw, YB(0) - YB(v)); }); }
   for (const s of o.lines) {
     g.strokeStyle = s.color; g.lineWidth = s.width || 2; g.setLineDash(s.dash || []); g.beginPath(); let pen = false;
@@ -44,7 +44,7 @@ function bars(cv, o) {
   const Y = v => T + (H - T - B) * (mx - v) / (mx - mn || 1), gw = (W - L - R) / n, bw = Math.min(26, gw * 0.8 / k);
   g.font = "11px " + BODY;
   for (let i = 0; i <= 4; i++) { const v = mn + (mx - mn) * i / 4, y = Y(v); g.strokeStyle = COL.line; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText(v.toFixed(Math.abs(mx - mn) < 3 ? 2 : 1), L - 6, y + 4); }
-  if (mn < 0) { g.strokeStyle = "rgba(255,255,255,.5)"; g.beginPath(); g.moveTo(L, Y(0)); g.lineTo(W - R, Y(0)); g.stroke(); }
+  if (mn < 0) { g.strokeStyle = "rgba(0,0,0,0.5)"; g.beginPath(); g.moveTo(L, Y(0)); g.lineTo(W - R, Y(0)); g.stroke(); }
   o.labels.forEach((lab, i) => {
     const cx = L + gw * (i + 0.5); g.fillStyle = COL.soft; g.textAlign = "center";
     const short = gw < g.measureText(lab).width + 8 ? lab.replace(" min", "") : lab;   // "5 min" becomes "5" when bars are narrow
@@ -62,7 +62,7 @@ function scatter(cv, o) {
   g.font = "11px " + BODY;
   for (let i = 0; i <= 4; i++) { const v = mx * i / 4; g.strokeStyle = COL.line; g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(W - R, Y(v)); g.stroke(); g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText(v.toFixed(0), L - 6, Y(v) + 4); g.textAlign = "center"; g.fillText(v.toFixed(0), X(v), H - 14); }
   g.fillText("measured depth (in)", L + (W - L - R) / 2, H - 1); g.textAlign = "left"; g.fillText("forecast (in)", 4, 10);
-  g.strokeStyle = "rgba(255,255,255,.55)"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(mx), Y(mx)); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = "rgba(0,0,0,0.55)"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(mx), Y(mx)); g.stroke(); g.setLineDash([]);
   for (const s of o.series) { g.fillStyle = s.color; g.globalAlpha = 0.75; for (const [a, p] of s.pts) { g.beginPath(); g.arc(X(a), Y(p), 3.2, 0, 7); g.fill(); } g.globalAlpha = 1; }
 }
 const keys = (el, items) => $(el).innerHTML = items.map(([c, l, dash]) => `<span><i style="background:${c}${dash ? ";opacity:.7" : ""}"></i>${esc(l)}</span>`).join("");
@@ -178,22 +178,28 @@ function waiting(msg) {
 
 function run(rows, extra = "") {
   const st = $("status");
-  const use = choice === "both" ? ["ann_lstm", "cnn_lstm"] : [choice];
+  const use = USE(choice);
   if (use.some(m => !M[m])) { st.textContent = "The model is still loading, try again in a moment."; return; }
   const n = rows.length, preds = {}, rainFc = {};
+  const rainA = rows.map(r => r.rain ?? 0), depthA = rows.map(r => r.depth);
   for (const m of use) {
     preds[m] = new Array(n).fill(null);
+    if (M[m].kind === "nb") {                                              // the notebook's LSTMs read the whole storm so far (rain features)
+      for (let i = 11; i < n; i++) { const out = FloodModels.predictNB(M[m], rainA, depthA, i); preds[m][i] = out.depth; if (!rainFc[i]) rainFc[i] = out.rain; }
+      continue;
+    }
     for (let i = 11; i < n; i++) {
       const win = rows.slice(i - 11, i + 1).map(r => [r.depth, r.rain ?? 0, r.rain == null ? 1 : 0]);
       const out = FloodModels.predict(M[m], win, rows[i].t);
-      preds[m][i] = out.depth; if (out.rain) rainFc[i] = out.rain;
+      preds[m][i] = out.depth; if (out.rain && !rainFc[i]) rainFc[i] = out.rain;
     }
   }
   const pk = rows.reduce((b, r, i) => r.depth > rows[b].depth ? i : b, 0);
   RES = { rows, preds, rainFc, use };
   const rise = rows.findIndex((r, i) => i >= 11 && r.depth >= 1);   // open at the moment the water starts rising
   STEP = Math.min(n - 1, Math.max(11, rise > 0 ? rise : pk - 4));
-  st.textContent = `Ran ${use.map(m => NAME[m]).join(" and ")} on ${n - 11} hour-long windows. ${extra}`.trim();
+  const names = use.map(m => NAME[m]);
+  st.textContent = `Ran ${names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0]} on ${n - 11} hour-long windows. ${extra}`.trim();
   show(true);
 }
 const runFromBox = () => {
@@ -240,6 +246,7 @@ function show(scroll) {
     WARN.rules.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.caught} of ${WARN.floods}</td><td class="n">${r.runs ? `${r.falseRuns} of ${r.runs}` : "none raised"}</td><td class="n">${r.leads.length ? median(r.leads) + " min" : "–"}</td></tr>`).join("");
   $("warn-say").textContent = WARN.floods ? `${WARN.floods} flood${WARN.floods > 1 ? "s" : ""} started in this data (depth reaching 1 inch after the first hour). On the 2026 test storms the “water shows” rule caught 65% of floods with half its alarms false, the best of all rules tried.`
     : "No flood starts in this data after the first hour (the depth never rises to 1 inch from below), so there is nothing to warn about.";
+  condBars(rows, preds, use);
   $("t-acc").innerHTML = "<tr><th>Model</th><th>Ahead</th><th class='n'>RMSE (in)</th><th class='n'>R²</th><th class='n'>Checks</th></tr>" +
     acc.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td class="n">${r[2]}</td><td class="n">${r[3]}</td><td class="n">${r[4]}</td></tr>`).join("") || "<tr><td>Not enough rows after the first hour to check.</td></tr>";
   // compare the models at every forecast time, with persistence as the baseline
@@ -299,7 +306,7 @@ function showStep() {
   if (!RES) return;
   const { rows, preds, rainFc, use } = RES, n = rows.length, s = STEP, past = rows.slice(s - 11, s + 1), fut = rows.slice(s + 1, s + 9);
   $("step-time").textContent = `${hhmm(rows[s].t)} UTC`;
-  drawTime();
+  drawTime(); rainNowLab();
   const known = fut.length;
   chart($("c-next"), { n: 20, mark: 11, label: i => i < 11 ? `−${(11 - i) * 5}` : i === 11 ? "now" : `+${(i - 11) * 5}`,
     bars: [...past.map(r => r.rain), ...fut.map(r => r.rain), ...new Array(8 - known).fill(null)],
@@ -322,12 +329,21 @@ function showStep() {
     <tr><td>Depth (in)</td>${cells(past, r => r.depth.toFixed(1))}</tr>
     <tr><td>Rain (mm)</td>${cells(past, r => r.rain == null ? "–" : r.rain.toFixed(1))}</tr>
     <tr><td>Rain missing</td>${cells(past, r => r.rain == null ? 1 : 0)}</tr>`;
-  const ann = use.includes("ann_lstm") && rainFc[s];
+  const ann = use.some(m => M[m].rain_forecast || M[m].kind === "nb") && rainFc[s];
   $("t-out").innerHTML = `<tr><th></th>${[...Array(8)].map((_, h) => `<th class="n">+${5 * (h + 1)}</th>`).join("")}</tr>` +
     (ann ? `<tr class="sub"><td>ANN rain forecast (mm)</td>${cells(rainFc[s], v => v.toFixed(1))}</tr>
             <tr class="sub"><td>Rain that fell (mm)</td>${cells([...Array(8)].map((_, h) => fut[h]), r => r ? (r.rain == null ? "–" : r.rain.toFixed(1)) : "?")}</tr>` : "") +
     use.map(m => `<tr><td style="color:${COL[m]}">${NAME[m]} depth (in)</td>${cells(preds[m][s], v => v.toFixed(1))}</tr>`).join("") +
     `<tr class="real"><td>Really happened (in)</td>${cells([...Array(8)].map((_, h) => fut[h]), r => r ? r.depth.toFixed(1) : "?")}</tr>`;
+  // the extra features the Feature-enhanced LSTM reads (same 12 readings as table 1)
+  $("feat-wrap").hidden = !use.includes("lstm_features");
+  $("in-title").textContent = use.some(m => M[m].kind === "nb") ? (use.every(m => M[m].kind === "nb") ? "1. What the models read: the last 12 of their 15 readings (75 minutes)" : "1. What the models read: the last hour, 12 readings (the notebook LSTMs read 15, 75 minutes)") : "1. What the model reads: the last hour, 12 readings";
+  if (use.includes("lstm_features")) {
+    const rainA = rows.map(r => r.rain ?? 0), depthA = rows.map(r => r.depth), F = [...Array(12)].map((_, k) => FloodModels.features(rainA, depthA, s - 11 + k));
+    const fr = (label, i, d) => `<tr><td>${label}</td>${F.map(f => `<td class="n">${f[i].toFixed(d)}</td>`).join("")}</tr>`;
+    $("t-feat-lab").innerHTML = `<tr><th></th>${past.map(r => `<th class="n">${hhmm(r.t)}</th>`).join("")}</tr>` +
+      fr("Intensity (mm/h)", 2, 1) + fr("15-min rain total", 3, 2) + fr("30-min rain total", 4, 2) + fr("60-min rain total", 5, 2) + fr("Change in rain", 6, 2);
+  }
   // one plain sentence
   const f20 = preds[m0][s][3], r20 = rows[s + 4];
   const rainHr = past.reduce((a, r) => a + (r.rain || 0), 0);
@@ -337,13 +353,73 @@ function showStep() {
     `${NAME[m0]} forecast <b>${f20.toFixed(1)} in</b> for 20 minutes later` + (r20 ? `; it was really <b>${r20.depth.toFixed(1)} in</b>.` : "; that time is after your last reading, so it can't be checked yet.");
 }
 
+const USE = c => c === "all" ? ["live", "ann_lstm", "cnn_lstm"] : c === "fe" ? ["lstm_improved", "lstm_features"] : [c];
+const ABOUT = {
+  lstm_improved: ["From the extensions notebook. Reads the last 75 minutes of past rain and water depth, forecasts 5 minutes ahead with the notebook's rainfall ANN, and repeats 8 times, feeding its own forecast back in.",
+                  "<span>rain + depth, 75 min</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM, 1 step</span><i>↻ ×8</i><span>depth +5…+40 min</span>"],
+  lstm_features: ["The same LSTM, plus features made from the rain: intensity (mm per hour), the rain totals over the last 15, 30 and 60 minutes, and the change in rain since the step before.",
+                  "<span>rain + depth + 5 rain features</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM, 1 step</span><i>↻ ×8</i><span>depth +5…+40 min</span>"],
+  live: ["The model the live site runs. The ANN forecasts the next 40 minutes of rain from the last hour; convolution filters pick out short patterns in the hour of depth and rain; the LSTM reads them, adds the rain forecast, and predicts the depth.",
+         "<span>last hour</span><i>→</i><span>ANN rain forecast</span><i>+</i><span>CNN filters</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>"],
+  ann_lstm: ["A small neural network (ANN) first forecasts the next 40 minutes of rain from the last hour; the LSTM then reads the hour of depth and rain, adds that forecast, and predicts the depth.",
+             "<span>last hour</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>"],
+  cnn_lstm: ["Convolution filters scan the hour for short patterns, such as a burst of rain or water starting to rise; the LSTM reads those patterns and predicts the depth. It does not forecast rain.",
+             "<span>last hour</span><i>→</i><span>CNN filters</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>"] };
+/* error under different rainfall conditions (as in the notebook): rain falling in the 5 minutes being forecast */
+function condBars(rows, preds, use) {
+  const n = rows.length, C = [["No rain", r => r === 0], ["Light rain (up to 0.3 mm)", r => r > 0 && r <= 0.3], ["Moderate rain (0.3 to 0.8 mm)", r => r > 0.3 && r <= 0.8],
+    ["Heavy rain (over 0.8 mm)", r => r > 0.8], ["Rapidly increasing rain", (r, ch) => r > 0 && ch >= 0.51]];
+  const res = C.map(([name, test]) => { const acc = Object.fromEntries(use.map(m => [m, [0, 0]])); let pts = 0;
+    for (let s = 11; s < n; s++) {
+      if (!rows.slice(Math.max(0, s - 11), Math.min(n, s + 9)).some(r => r.depth > 0)) continue;     // flood-related moments only
+      for (let h = 0; h < 8 && s + h + 1 < n; h++) {
+        const t = s + h + 1, r = rows[t].rain ?? 0, ch = r - (rows[t - 1].rain ?? 0); if (!test(r, ch)) continue; pts++;
+        for (const m of use) { const e = preds[m][s][h] - rows[t].depth; acc[m][0] += e * e; acc[m][1]++; }
+      }
+    }
+    return [name, pts, use.map(m => acc[m][1] ? Math.sqrt(acc[m][0] / acc[m][1]) : null)]; }).filter(r => r[1] > 1);
+  const max = Math.max(0.01, ...res.flatMap(r => r[2].filter(v => v != null)));
+  $("cond-bars").innerHTML = res.length ? res.map(([c, pts, v]) => `<div class="hb"><span class="hb-l">${esc(c)} <small>${pts.toLocaleString()} checks</small></span>` +
+      use.map((m, i) => `<span class="hb-r"><i style="width:${(v[i] / max * 70).toFixed(1)}%; background:${COL[m]}"></i><em>${v[i].toFixed(2)} in</em></span>`).join("") + "</div>").join("") +
+      `<div class="keys" style="margin-top:8px">${use.map(m => `<span><i style="background:${COL[m]}"></i>${NAME[m]}</span>`).join("")}</div>`
+    : "<p class='note'>No moments with water to check in this data.</p>";
+}
+
+/* raining now: at the chosen moment, the depth 5, 15, 30 and 40 minutes later (output steps 0, 2, 5, 7) */
+const RN = [[0, 5], [2, 15], [5, 30], [7, 40]];
+function rainNowLab() {
+  const { rows, preds, rainFc, use } = RES, n = rows.length, s = STEP;
+  const r15 = rows.slice(Math.max(0, s - 2), s + 1).reduce((a, r) => a + (r.rain || 0), 0), raining = r15 > 0;
+  $("rn-title").textContent = `Raining now at ${hhmm(rows[s].t)} UTC: the flood in 5, 15, 30 and 40 minutes`;
+  const real = k => rows[s + k + 1] ? rows[s + k + 1].depth : null, f1 = v => v == null ? "?" : v < 0.05 ? "dry" : v.toFixed(1) + " in";
+  const m0 = use[0];
+  $("rn-say").innerHTML = (raining ? `It is raining: <b>${r15.toFixed(1)} mm</b> in the last 15 minutes. ` : "No rain in the last 15 minutes. ") +
+    `The water now is <b>${f1(rows[s].depth)}</b>. ${NAME[m0]} expects ` + RN.map(([k, m]) => `<b>${f1(preds[m0][s][k])}</b> in ${m} min`).join(", ") +
+    (real(7) != null ? `; it was really ${RN.map(([k]) => f1(real(k))).join(", ")}.` : ".");
+  const fcRain = rainFc[s] ? RN.map(([k]) => rainFc[s].slice(0, k + 1).reduce((a, b) => a + b, 0)) : null;
+  $("t-rn").innerHTML = `<tr><th></th><th class="n">Now</th>${RN.map(([, m]) => `<th class="n">In ${m} min</th>`).join("")}</tr>` +
+    use.map(m => `<tr><td style="color:${COL[m]}">${NAME[m]} forecast</td><td class="n">–</td>${RN.map(([k]) => `<td class="n"><b>${f1(preds[m][s][k])}</b></td>`).join("")}</tr>`).join("") +
+    `<tr class="real"><td>Really happened</td><td class="n">${f1(rows[s].depth)}</td>${RN.map(([k]) => `<td class="n">${f1(real(k))}</td>`).join("")}</tr>` +
+    (fcRain ? `<tr class="sub"><td>Rain expected by then (ANN)</td><td class="n">${r15.toFixed(1)} mm last 15 min</td>${fcRain.map(v => `<td class="n">${v.toFixed(1)} mm</td>`).join("")}</tr>
+      <tr class="sub"><td>Rain that really fell</td><td class="n"></td>${RN.map(([k]) => rows[s + k + 1] ? `<td class="n">${rows.slice(s + 1, s + k + 2).reduce((a, r) => a + (r.rain || 0), 0).toFixed(1)} mm</td>` : `<td class="n">?</td>`).join("")}</tr>` : "");
+  if (RES.rnAcc == null) {                                                     // over all of the data, once per run
+    RES.rnAcc = use.map(m => [m, RN.map(([k]) => { const a = [], p = [];
+      for (let t = 11; t + k + 1 < n; t++) { a.push(rows[t + k + 1].depth); p.push(preds[m][t][k]); }
+      if (!a.length) return null;
+      const mean = a.reduce((x, y) => x + y, 0) / a.length, se = a.reduce((x, v, i) => x + (v - p[i]) ** 2, 0), st = a.reduce((x, v) => x + (v - mean) ** 2, 0);
+      return [Math.sqrt(se / a.length), st > 1e-9 ? 1 - se / st : null]; })]);
+  }
+  $("t-rn-acc").innerHTML = `<tr><th>Model</th>${RN.map(([, m]) => `<th class="n">${m} min</th>`).join("")}</tr>` +
+    RES.rnAcc.map(([m, r]) => `<tr><td style="color:${COL[m]}">${NAME[m]}</td>${r.map(v => `<td class="n">${v ? `± ${v[0].toFixed(1)} in<small> R² ${v[1] == null ? "–" : v[1].toFixed(2)}</small>` : "–"}</td>`).join("")}</tr>`).join("");
+}
+function rnHeavy() { if (!RES) return; const { rows } = RES; let best = 11, bv = -1;
+  for (let s = 11; s < rows.length; s++) { const v = rows.slice(s - 2, s + 1).reduce((a, r) => a + (r.rain || 0), 0); if (v > bv) { bv = v; best = s; } } return best; }
+
 function info() {
-  const one = m => M[m] ? `<p><b>${NAME[m]}</b>. ${m === "ann_lstm"
-      ? "A small neural network (ANN) first forecasts the next 40 minutes of rain from the last hour; the LSTM then reads the hour of depth and rain, adds that forecast, and predicts the depth."
-      : "Convolution filters scan the hour for short patterns, such as a burst of rain or water starting to rise; the LSTM reads those patterns and predicts the depth. It does not forecast rain."}</p>
-      <div class="flowline">${m === "ann_lstm" ? "<span>last hour</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>" : "<span>last hour</span><i>→</i><span>CNN filters</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>"}</div>
+  const one = m => M[m] ? `<p><b>${NAME[m]}</b>. ${ABOUT[m][0]}</p>
+      <div class="flowline">${ABOUT[m][1]}</div>
       <p>Test R² (Jul–Oct 2026): ${M[m].test_r2[0].toFixed(2)} at 5 min, ${M[m].test_r2[3].toFixed(2)} at 20 min, ${M[m].test_r2[7].toFixed(2)} at 40 min.</p>` : "<p>Loading the model…</p>";
-  $("model-info").innerHTML = (choice === "both" ? ["ann_lstm", "cnn_lstm"] : [choice]).map(one).join("");
+  $("model-info").innerHTML = USE(choice).map(one).join("");
 }
 
 /* ------------------------------------------------------------ wiring */
@@ -374,6 +450,8 @@ async function init() {
   $("pick").onchange = e => pick(+e.target.value);
   $("run").onclick = runFromBox;
   $("step").oninput = e => { STEP = +e.target.value; showStep(); };
+  const rnGo = s => { if (!RES) return; if (PLAY) $("play").click(); STEP = Math.max(11, Math.min(RES.rows.length - 1, s)); $("step").value = STEP; showStep(); };
+  $("rn-back").onclick = () => rnGo(STEP - 1); $("rn-fwd").onclick = () => rnGo(STEP + 1); $("rn-heavy").onclick = () => rnGo(rnHeavy());
   $("play").onclick = () => {
     if (PLAY) { clearInterval(PLAY); PLAY = null; $("play").textContent = "Play"; return; }
     if (!RES) return; if (STEP >= RES.rows.length - 1) STEP = 11;
@@ -385,7 +463,7 @@ async function init() {
   $("model-seg").querySelectorAll("button").forEach(b => b.onclick = () => { choice = b.dataset.m; $("model-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); info(); if (RES) waiting("Model changed. Press “Run the forecast” to calculate again."); });
   $("ahead-seg").querySelectorAll("button").forEach(b => b.onclick = () => { ahead = +b.dataset.h; $("ahead-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); if (RES) show(false); });
   info();
-  for (const m of ["ann_lstm", "cnn_lstm"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });
+  for (const m of ["live", "ann_lstm", "cnn_lstm", "lstm_improved", "lstm_features"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });
   if (window.Sky) Sky.set({ storm: 0.45, rain: 0, thunder: 0 });
   let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => RES && show(false), 250); });
 }
