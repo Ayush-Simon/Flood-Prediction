@@ -6,8 +6,9 @@
 <title>NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css?v=14">
-<link rel="stylesheet" href="css/classic.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/classic.css?v=4">
+<script src="js/theme.js?v=1"></script>
 
 
 </head>
@@ -29,11 +30,29 @@
 
 <main id="app">
   <div class="top">
-    <div class="place"><small>Flood watch for</small><b id="place-time">New York City</b></div>
+    <div class="place"><small>Flood watch for <button type="button" class="guide-link" id="intro-open">How to read this page</button></small><b id="place-time">New York City</b></div>
     <div class="right">
       <div class="modes" role="group" aria-label="View"><button data-mode="live" aria-pressed="true"><span class="livedot"></span>Live</button><button data-mode="past" aria-pressed="false">Past storms</button></div>
       <select id="storm" class="past-only" aria-label="Storm day"></select>
     </div>
+  </div>
+
+  <div class="intro" id="intro" hidden>
+    <div class="intro-head">
+      <div><h2 class="intro-title">How to read this page</h2>
+        <p>NYC Flood Watch forecasts how deep the water on New York streets will get in the next 5 to 40 minutes, from rain gauges and 27 street flood sensors.</p></div>
+      <button type="button" class="intro-close" id="intro-close">Got it</button>
+    </div>
+    <div class="intro-modes">
+      <p><b>Past storms</b> replays a real 2026 storm. You see what the model forecast and what really happened, so you can judge it.</p>
+      <p><b>Live</b> shows today’s weather and the forecast for the next 40 minutes. Switch with the Live and Past storms buttons at the top.</p>
+    </div>
+    <ol class="intro-steps">
+      <li><b>Pick a storm</b><span>Use the storm list at the top. The summary below tells you how much rain fell and how deep the water got.</span></li>
+      <li><b>Stand inside the storm</b><span>In “Raining now”, move the time. Each sensor shows the water then, the forecast for 5, 15, 30 and 40 minutes later, and what really happened in grey.</span></li>
+      <li><b>Watch the map</b><span>Press ▶ under the flood map to replay the storm. Red streets are the most likely to flood. Type a start and destination for a route around them.</span></li>
+    </ol>
+    <p class="intro-key"><b>Reading the numbers:</b> depths are inches of water at the sensor. “dry” is under 0.05 in. <span class="k-wet">Orange</span> is some water, <span class="k-flood">red</span> is 4 in or more, which the site calls flooding.</p>
   </div>
 
   <section class="hero" id="top">
@@ -57,7 +76,7 @@
 
   <section id="rainpast" class="past-only">
     <h2>Raining now: the flood in 5, 15, 30 and 40 minutes</h2>
-    <p class="lede">Stand at any moment of this storm. The main model (ANN rain forecast, then CNN-LSTM) sees only the hour up to that moment and forecasts the water at every flood sensor. Next to each forecast is what the sensor really measured.</p>
+    <p class="lede">Pick any moment of this storm with the slider. The table shows how deep the water was then, what the model expected 5, 15, 30 and 40 minutes later (big number), and what really happened (small grey number). The model only sees the hour up to that moment.</p>
     <div class="box">
       <div class="rp-ctl" role="group" aria-label="Choose the moment">
         <button type="button" id="rp-back" aria-label="5 minutes earlier">◀ 5 min</button>
@@ -69,15 +88,17 @@
       <h3 id="rp-title" style="margin-top:14px">…</h3>
       <p class="rainnow-say" id="rp-say"></p>
       <div class="tablewrap"><table id="t-rp"></table></div>
-      <div class="tablewrap"><table id="t-rp-trust" class="trust"></table></div>
-      <p class="note" id="rp-note"></p>
+      <details class="more"><summary>How far to trust these numbers</summary>
+        <div class="tablewrap"><table id="t-rp-trust" class="trust"></table></div>
+        <p class="note" id="rp-note"></p></details>
     </div>
     <div class="box" id="fe-box" style="margin-top:20px">
       <h3>Improved LSTM against Feature-enhanced LSTM, at the same moment</h3>
       <p class="rainnow-say">Both read the last 75 minutes at the sensor and forecast 40 minutes ahead with the same rainfall ANN. The <b>Improved LSTM</b> reads past rain and water depth only. The <b>Feature-enhanced LSTM</b> also reads features made from the rain: intensity (mm per hour), the rain totals over the last 15, 30 and 60 minutes, and how much the rain changed since the step before.</p>
       <p class="rainnow-say" id="fe-say"></p>
       <div class="tablewrap"><table id="t-fe"></table></div>
-      <h4 id="feat-title" style="margin-top:18px">What the Feature-enhanced LSTM reads</h4>
+      <details class="more"><summary>Show what the Feature-enhanced LSTM reads, and how both models did</summary>
+      <h4 id="feat-title" style="margin-top:6px">What the Feature-enhanced LSTM reads</h4>
       <div class="tablewrap"><table id="t-feat"></table></div>
       <p class="note">The last 30 minutes of the 75 it reads. Rain is at the sensor's nearest gauge, mm per 5 minutes. The Improved LSTM reads only the first two columns.</p>
       <div class="grid2" style="margin-top:14px">
@@ -86,6 +107,7 @@
         <div><h4>All 2026 test storms, by rainfall condition</h4><div class="hbars" id="fe-cond"></div>
           <p class="note">Typical miss (RMSE, inches) at all 8 forecast times, flood-related test windows, grouped by the rain falling in the 5 minutes forecast. Scripts 15a and 16b.</p></div>
       </div>
+      </details>
     </div>
   </section>
 
@@ -161,7 +183,7 @@
         <p class="note" id="rep-note"></p>
       </aside>
     </div>
-    <p class="note"><b>What the map shows.</b> Street colours are the street model’s risk of a flooding report in this storm: high risk means a 1% or higher chance, about 25 times the average street. The model learned from 311 reports, which over-rank areas where people report more, so it is a risk ranking, not measured water. When each street lights up and clears is a display rule that follows rain at the nearest gauge, not a depth forecast. Only the diamonds carry the depth model: its forecast at each FloodNet sensor. Routes ignore one-way rules.</p>
+    <details class="more"><summary>What the map colours mean</summary><p class="note">Street colours are the street model’s risk of a flooding report in this storm: high risk means a 1% or higher chance, about 25 times the average street. The model learned from 311 reports, which over-rank areas where people report more, so it is a risk ranking, not measured water. When each street lights up and clears is a display rule that follows rain at the nearest gauge, not a depth forecast. Only the diamonds carry the depth model: its forecast at each FloodNet sensor. Routes ignore one-way rules.</p></details>
   </section>
 
   <section id="depth" class="past-only">
@@ -177,7 +199,6 @@
           <h3 id="depth-title">Depth</h3>
           <canvas class="chart" id="depth-chart" style="height:300px"></canvas>
           <div class="keys" id="depth-keys"></div><div class="plain" id="depth-say"></div>
-          <details class="models"><summary>Show more models</summary><div class="toggles" id="model-toggles"></div></details>
         </div>
         <div class="box"><h3>Error in this storm (inches)</h3><table id="storm-err"></table>
           <p class="note">Typical error when there was water, across all sensors that day. Lower is better.</p></div>
@@ -256,21 +277,30 @@
         </div>
         <p>Each tree is a short chain of yes/no questions. Every new tree is trained on the errors of the ones before it, so the sum keeps getting better. XGBoost ranks which streets flood on the map, and is also used to forecast rain and depth.</p>
       </div>
-      <div class="box model-card">
-        <h3>Recursive ANN-LSTM (the paper’s design)</h3>
-        <p class="tagline">Predict 5 minutes, feed it back in, repeat.</p>
-        <div class="flow">
-          <div class="st"><b>Last hour</b><span>+ next 5 min of forecast rain</span></div><span class="ar">→</span>
-          <div class="st nn"><b>LSTM</b><span>one step only</span></div><span class="ar">→</span>
-          <div class="st out"><b>Depth in 5 min</b><span>added to the window</span></div>
-          <div class="loop">↻ repeated 8 times to reach 40 minutes</div>
-        </div>
-        <p>Best of all models for the next 5 to 15 minutes. After that, each step builds on the last guess, small errors pile up, and the standard LSTM, which predicts all 40 minutes at once, does better.</p>
-      </div>
+      
     </div>
     <p class="note">Persistence is the baseline: it assumes the water stays exactly as it is now. Any model worth using has to beat it.</p>
 
-    <h3 style="font-size:19px; margin:44px 0 6px">What R² means</h3>
+    <h3 style="font-size:19px; margin:40px 0 6px">Stage 1: forecasting the rain (ARIMA, XGBoost, ANN)</h3>
+    <p class="lede" style="margin-bottom:16px">Before the water depth, the project forecasts the rain itself, hour by hour, 1 to 6 hours ahead, for each of the 8 rain grid cells over New York. Four models were compared on July–October 2026, hours the models never saw.</p>
+    <div class="grid2">
+      <div class="box"><h3>Rain forecast accuracy (hours with rain)</h3><table id="t-rainfc"></table>
+        <p class="note">Typical miss (RMSE, mm of rain in the hour; lower is better) and R² (higher is better), at 1, 2 and 3 hours ahead. Only hours with rain in the last 3 hours or the forecast window, the ones that matter for floods. Persistence assumes this hour’s rain simply continues. XGBoost is best by a small margin; ARIMA and the ANN are close behind, and all beat persistence. Script 03.</p></div>
+      <div class="box"><h3>How ARIMA calculates the forecast</h3>
+        <p class="note" style="font-size:14px; color:var(--ink)">ARIMA here is its autoregressive form, AR(<i>p</i>): the next hour’s rain is the long-run average plus a weighted sum of how far each of the last <i>p</i> hours was from that average.</p>
+        <p class="arima-eq">rain<sub>next</sub> = μ + φ<sub>1</sub>(r<sub>1</sub> − μ) + φ<sub>2</sub>(r<sub>2</sub> − μ) + … + φ<sub>6</sub>(r<sub>6</sub> − μ)</p>
+        <ol class="note arima-steps">
+          <li><b>Fit:</b> for each rain cell, on the last two training years (2024–2025), try <i>p</i> = 1, 2, 3, 4 and 6 and keep the one with the lowest AIC (a score that rewards fit and punishes extra terms). All 8 cells chose <i>p</i> = 6.</li>
+          <li><b>Weights:</b> φ<sub>1</sub> ≈ 0.5 for the last hour, then small weights (under 0.12) for the hours before; μ ≈ 0.13 mm per hour. So rain mostly carries on at half its strength, drifting back to the average.</li>
+          <li><b>Look further ahead:</b> the 1-hour forecast is fed back in as if it had been measured, then the formula runs again for hour 2, and so on to hour 6. Negative results are set to 0.</li>
+        </ol>
+        <h4 style="margin:12px 0 6px">Worked example (rain cell 1)</h4>
+        <div class="tablewrap"><table id="t-arima"></table></div>
+        <p class="note" id="arima-say"></p></div>
+    </div>
+
+    <details class="more big" id="scores-more"><summary>What the scores mean: R², RMSE, warnings</summary>
+    <h3 style="font-size:19px; margin:10px 0 6px">What R² means</h3>
     <p class="lede" style="margin-bottom:18px">R² compares a model with the laziest possible guess: the average depth. It asks how much of the gap between that guess and the real water level the model closes.</p>
     <div class="box r2">
       <div>
@@ -297,22 +327,13 @@
       <div><h3>Caught early, and false alarms</h3><p>Of the floods that happened, the share the model warned about while the street was still dry. On its own it flatters a model that warns all the time, so it is always read with the false-alarm share: how many warnings did not come true.</p></div>
       <div><h3>Top 1% / top 5%</h3><p>For streets: if you check only the riskiest 1% of streets, what share of the streets that really flooded have you found? 22% from 1% of streets is 22 times better than picking at random.</p></div>
     </div>
+    </details>
 
     <h3 style="font-size:19px; margin:44px 0 6px">How accurate the models are</h3>
     <p class="lede" style="margin-bottom:18px">These scores were measured once, on storms from July to October 2026 that the models never saw, by comparing their forecasts with what the sensors really recorded. They describe how far to trust the models, so they do not change with today’s weather. Today’s numbers are in <a href="#today">Today’s prediction</a>.</p>
     <div class="grid2">
       <div class="box"><h3>Flood depth at the sensors</h3><table id="t-depth"></table>
         <p class="note">Green is the best realistic model. “Perfect rain” rows were given the rain that really fell next, so they show the ceiling, not a real forecast. Read across a row: every model gets worse the further ahead it looks.</p>
-        <h3 style="margin-top:22px">One step at a time vs all at once</h3><table id="t-rec"></table>
-        <p class="note">R² on the same test storms. The recursive models win at 5 minutes and lose by 40.</p>
-        <h3 style="margin-top:22px">Warnings, counted honestly</h3>
-        <table><tr><th>Model</th><th class="n">Floods caught</th><th class="n">False alarms</th><th class="n">Lead</th></tr>
-          <tr><td>Warn if any water now</td><td class="n">32%</td><td class="n">79%</td><td class="n">12 min</td></tr>
-          <tr><td>LSTM</td><td class="n">29%</td><td class="n">80%</td><td class="n">10 min</td></tr>
-          <tr><td>CNN-LSTM</td><td class="n">29%</td><td class="n">82%</td><td class="n">15 min</td></tr>
-          <tr><td>Bucket model + ANN rain</td><td class="n">41%</td><td class="n">92%</td><td class="n">15 min</td></tr>
-          <tr><td>LSTM + perfect rain (upper bound)</td><td class="n">36%</td><td class="n">78%</td><td class="n">15 min</td></tr></table>
-        <p class="note">“Will a street under 1 inch now pass 1 inch within 40 minutes?” Counted per 5-minute window: 1,066 test windows before a flood. The alarm level was tuned on half the storms and scored on the other half. False alarms are the share of warnings that did not come true.</p>
         <h3 style="margin-top:22px">Warnings, counted per flood</h3>
         <table><tr><th>Rule</th><th class="n">Floods caught</th><th class="n">False alarms</th><th class="n">Lead</th></tr>
           <tr class="best"><td>Warn when water shows (0.1 in or more)</td><td class="n">65%</td><td class="n">52%</td><td class="n">10 min</td></tr>
@@ -325,7 +346,7 @@
           <li>Water depth 5 minutes ahead is predicted well (R² 0.94). By 20 minutes the models get the shape of a flood but not its size.</li>
           <li>The standard LSTM has the lowest error of the neural models, and the gap to ANN-LSTM and CNN-LSTM is statistically significant (p ≤ 0.01).</li>
           <li>A simple physical “bucket” model with three numbers is just as accurate as the LSTM (no significant difference, p = 0.56).</li>
-          <li>Counted per 5-minute window, warnings catch about a third of floods with about four false alarms per real flood. Counted per flood, the rule “warn when water shows” catches 65% of floods about 10 minutes ahead, with half its alarms false.</li>
+          <li>Counted per flood, the rule “warn when water shows” catches 65% of floods about 10 minutes ahead, with half its alarms false.</li>
           <li>The 40-minute forecast is not held back by the rain forecast: even the rain that really fell lifts its R² only from 0.11 to 0.19. The models judge how high a flood will get (R² 0.55 for the highest depth in the next 40 minutes) far better than the minute it peaks.</li>
         </ul>
         <h3 style="margin-top:22px">Which streets flood</h3><table id="t-road"></table>
@@ -336,8 +357,8 @@
   <footer>Student research prototype. Not an official warning service. Live weather and forecasts: Open-Meteo. Depth: FloodNet NYC. Rain: NOAA airport gauges via Iowa Environmental Mesonet, and Open-Meteo. Streets, drains, flood maps and 311 reports: NYC Open Data.</footer>
 </main>
 
-<script src="js/sky.js?v=14" defer></script>
-<script src="js/app.js?v=14" defer></script>
-<script src="js/ui.js?v=14" defer></script>
+<script src="js/sky.js?v=16" defer></script>
+<script src="js/app.js?v=16" defer></script>
+<script src="js/ui.js?v=16" defer></script>
 </body>
 </html>

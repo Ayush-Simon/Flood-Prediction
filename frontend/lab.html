@@ -6,9 +6,10 @@
 <title>Model Lab · NYC Flood Watch</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/style.css?v=10">
-<link rel="stylesheet" href="css/lab.css?v=10">
-<link rel="stylesheet" href="css/classic.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=12">
+<link rel="stylesheet" href="css/lab.css?v=12">
+<link rel="stylesheet" href="css/classic.css?v=4">
+<script src="js/theme.js?v=1"></script>
 </head>
 <body class="live lab">
 <canvas id="sky" aria-hidden="true"></canvas>
@@ -26,9 +27,14 @@
   </div>
 
   <section class="lab-hero">
-    <span class="pill">ANN-LSTM and CNN-LSTM, run on your data</span>
+    <span class="pill">Feature-enhanced LSTM and ANN-LSTM, run on your data</span>
     <h1>Put in the readings, see the forecast</h1>
     <p class="lede">Give the models water depth and rain every 5 minutes at one place. For every reading after the first hour they forecast the depth 5 to 40 minutes ahead, and you can compare that with what really happened.</p>
+    <ol class="intro-steps lab-steps">
+      <li><b>Choose data</b><span>Pick a real 2026 storm from the list, or upload or paste your own CSV.</span></li>
+      <li><b>Choose a model</b><span>Feature-enhanced LSTM, ANN-LSTM, or both LSTMs side by side.</span></li>
+      <li><b>Press “Run the forecast”</b><span>Then drag the slider in “Watch the model make one forecast” to step through the storm.</span></li>
+    </ol>
   </section>
 
   <section class="lab-grid">
@@ -47,7 +53,7 @@
     <div class="box">
       <h3>2. The model</h3>
       <div class="seg" id="model-seg" role="group" aria-label="Model">
-        <button data-m="live" aria-pressed="true">Main model</button><button data-m="ann_lstm" aria-pressed="false">ANN-LSTM</button><button data-m="cnn_lstm" aria-pressed="false">CNN-LSTM</button><button data-m="all" aria-pressed="false">All three</button><button data-m="fe" aria-pressed="false">Improved vs Feature-enhanced LSTM</button>
+        <button data-m="lstm_features" aria-pressed="true">Feature-enhanced LSTM</button><button data-m="ann_lstm" aria-pressed="false">ANN-LSTM</button><button data-m="fe" aria-pressed="false">Improved vs Feature-enhanced LSTM</button>
       </div>
       <div class="model-info" id="model-info"></div>
       <h3 style="margin-top:22px">3. Run it</h3>
@@ -122,15 +128,15 @@
         <p class="note">The model with the lowest typical miss at each forecast time on this data. With one storm, small differences can be luck.</p></div>
     </div>
 
-    <div class="box" style="margin-top:18px"><div class="chart-head"><h3>All readings</h3><a href="#" id="download">Download as CSV</a></div>
-      <div class="tablewrap"><table id="t-rows"></table></div></div>
+    <details class="more" style="margin-top:22px"><summary>Show every reading as a table</summary><div class="box" style="margin-top:18px"><div class="chart-head"><h3>All readings</h3><a href="#" id="download">Download as CSV</a></div>
+      <div class="tablewrap"><table id="t-rows"></table></div></div></details>
   </section>
 
   <footer>The models were trained on New York FloodNet sensors and airport rain gauges (2021–2025) and tested on July–October 2026. On other places or rain sources they may be less accurate. Runs entirely in your browser; nothing you paste is uploaded.</footer>
 </main>
-<script src="js/sky.js?v=10" defer></script>
-<script src="js/models.js?v=10" defer></script>
-<script src="js/lab.js?v=10" defer></script>
+<script src="js/sky.js?v=12" defer></script>
+<script src="js/models.js?v=12" defer></script>
+<script src="js/lab.js?v=12" defer></script>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden><i aria-hidden="true">✓</i><div><b></b><span></span></div></div>
 </body>
 </html>

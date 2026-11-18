@@ -2,7 +2,14 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 // colours for a light page (classic theme); the map keeps its own dark overlays
-const C = { rain:"#2a7fd4", flood:"#d0362a", warn:"#e08a00", watch:"#c9a400", route:"#8a6df0", soft:"#6e6e6e", line:"rgba(0,0,0,.09)", ink:"#333", ok:"#2a8f5b" };
+const C = { rain:"#2a7fd4", flood:"#d0362a", warn:"#e08a00", watch:"#c9a400", route:"#8a6df0", soft:"#6e6e6e", line:"rgba(0,0,0,.09)", ink:"#333", ok:"#2a8f5b", mark:"rgba(0,0,0,.4)" };
+function palette() {                                     // chart colours that depend on light / dark mode (js/theme.js)
+  const d = window.Theme && Theme.dark();
+  Object.assign(C, d ? { soft:"#a8a8a8", line:"rgba(255,255,255,.1)", ink:"#e8e8e8", mark:"rgba(255,255,255,.45)" }
+                     : { soft:"#6e6e6e", line:"rgba(0,0,0,.09)", ink:"#333", mark:"rgba(0,0,0,.4)" });
+  try { FE_COL.enh = d ? "#ec5a96" : "#c2185b"; } catch (e) {}          // defined further down; set again there
+}
+palette();
 const BODY = getComputedStyle(document.documentElement).getPropertyValue("--body");
 const NICE = { "ANN-LSTM (LSTM + ANN rain forecast)": "ANN-LSTM", "CNN-LSTM + ANN rain forecast": "CNN-LSTM + ANN rain", "LSTM (standard)": "LSTM", "Persistence": "Persistence (baseline)",
   "LSTM + perfect rain forecast": "LSTM + perfect rain (upper bound)", "CNN-LSTM + perfect rain forecast": "CNN-LSTM + perfect rain (upper bound)", "XGBoost (no future rain)": "XGBoost",
@@ -15,7 +22,7 @@ const STYLE = { "Persistence": ["#8c8c8c", [4,4]], "LSTM (standard)": ["#2a7fd4"
   "CNN-LSTM + ANN rain forecast": ["#c2185b", []], "LSTM + perfect rain forecast": ["#2a8f5b", [2,3]], "CNN-LSTM + perfect rain forecast": ["#d0362a", [2,3]],
   "XGBoost (no future rain)": ["#b8960a", []], "XGBoost + perfect rain forecast": ["#b8960a", [2,3]], "Att-LSTM + perfect rain forecast": ["#7357c9", [2,3]],
   "Att-LSTM + perfect forecast + terrain": ["#7357c9", [6,3]], "Att-LSTM + nowcast + terrain (realistic)": ["#7357c9", []] };
-const DEFAULT_ON = new Set(["LSTM (standard)", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM"]);
+const DEFAULT_ON = new Set(["LSTM (standard)", "ANN-LSTM (LSTM + ANN rain forecast)", "CNN-LSTM", "CNN-LSTM + ANN rain forecast"]);   // the 4 main models
 const GAUGE = { NYC:["Central Park", "#8fd0ff"], LGA:["LaGuardia", "#c9b5ff"], JFK:["JFK", "#74e3b5"] };
 const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
 const hhmm = m => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
@@ -35,7 +42,7 @@ function chart(cv, o) {
   { const room = Math.max(1, Math.floor((X(n - 1) - X(0)) / 46)), tk = Math.max(o.tick, Math.ceil((n - 1) / room / o.tick) * o.tick);
     for (let i = 0; i < n; i += tk) { const x = X(i), s = o.label(i), w = g.measureText(s).width;
       g.fillText(s, Math.min(Math.max(x, w / 2 + 1), W - w / 2 - 1), H - 6); } }
-  if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = "rgba(0,0,0,.4)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
+  if (o.mark != null && o.mark >= 0 && o.mark < n) { g.strokeStyle = C.mark; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
   for (const s of o.series) {
     const yy = s.y2 ? Y2 : Y;
     if (s.bars) { g.fillStyle = s.color; const w = Math.max(1, (W - L - R) / n - 2); s.data.forEach((v, i) => { if (v) g.fillRect(X(i) - w / 2, yy(v), w, yy(0) - yy(v)); }); continue; }
@@ -497,7 +504,7 @@ const FE_COND = [   // nb_rainfall_condition_analysis_nyc.csv: condition, points
   ["No rain", 37891, [1.24, 0.71], [1.56, 0.53]], ["Light rain (up to 0.3 mm)", 8187, [1.62, 0.47], [1.56, 0.51]],
   ["Moderate rain (0.3 to 0.8 mm)", 4097, [2.69, 0.31], [2.66, 0.32]], ["Heavy rain (over 0.8 mm)", 4513, [4.12, 0.01], [3.95, 0.09]],
   ["Rapidly increasing rain", 3250, [3.49, 0.06], [3.35, 0.13]]];
-const FE_COL = { imp: "#2a7fd4", enh: "#c2185b" }, FE_NAME = { imp: "Improved LSTM", enh: "Feature-enhanced LSTM" };
+const FE_COL = { imp: "#2a7fd4", enh: window.Theme && Theme.dark() ? "#ec5a96" : "#c2185b" }, FE_NAME = { imp: "Improved LSTM", enh: "Feature-enhanced LSTM" };
 function feCond() {
   const max = Math.max(...FE_COND.flatMap(r => [r[2][0], r[3][0]]));
   $("fe-cond").innerHTML = FE_COND.map(([c, n, a, b]) => `<div class="hb"><span class="hb-l">${esc(c)} <small>${n.toLocaleString()} checks</small></span>` +
@@ -676,7 +683,7 @@ async function setMode(m) {
 async function loadStorm(date) {
   const st = STORM = PAST = await getJSON(`storm_${date}.json`), meta = INDEX.storms.find(s => s.date === date);
   if (playing) play(); WB = buckets(st); played = false; lastSig = ""; lastSlot = -1;
-  $("map-lede").textContent = "Press play to watch the storm unfold. Streets light up as rain builds at the nearest gauge, riskiest streets first, and clear again as it drains. Diamonds are flood sensors with the chosen model's depth forecast. Set a start and destination to see the safe route change as streets flood.";
+  $("map-lede").textContent = "Press ▶ under the map to replay the storm. Streets light up as the rain builds, riskiest (red) first, and clear as it drains. Diamonds are the flood sensors with the forecast depth. Type a start and destination on the right to get a route around flooded streets.";
   history.replaceState(null, "", "#" + date);
   const flooded = st.sensors.filter(s => s.peak > 0), deep = Math.max(0, ...st.sensors.map(s => s.peak));
   $("headline").textContent = fmtDate(date) + ": " + (deep >= 12 ? "streets under deep water" : deep >= 4 ? "flooding across the city" : deep > 0 ? "shallow street flooding" : "rain, no flooding at the sensors");
@@ -692,7 +699,7 @@ async function loadStorm(date) {
   const withPred = st.sensors.filter(s => s.obs).sort((a, b) => b.peak - a.peak);
   if (!withPred.some(s => s.id === sensorId)) sensorId = withPred.length ? withPred[0].id : null;
   $("depth-body").style.display = withPred.length ? "" : "none";
-  $("depth-lede").textContent = withPred.length ? "The white line is the water the sensor measured. Each coloured line is a model's forecast, drawn at the time it was forecasting for: the closer the lines, the better the model."
+  $("depth-lede").textContent = withPred.length ? "One sensor at a time. The thick line marked “Measured” is the water the sensor recorded; each coloured line is a model’s forecast, drawn at the time it was forecasting for. The closer a coloured line sits to the measured one, the better the model."
     : st.has_pred ? "No sensor recorded water on this day." : "Depth forecasts exist for July to October 2026. Pick a storm from those months.";
   if (withPred.length) {
     $("sensor").innerHTML = withPred.map(s => `<option value="${esc(s.id)}">${esc(s.name)} (peak ${s.peak} in)</option>`).join(""); $("sensor").value = sensorId;
@@ -740,7 +747,33 @@ function r2Demo() {
     chart(cv, { n, tick: 12, label: i => "+" + i * 5 + "m", minMax: 10, series: [{ data: obs.map(() => mean), color: C.soft, dash: [4, 4], width: 1.4 }, { data: fc.map(v => Math.max(0, v)), color: C.rain, width: 2.2 }, { data: obs, color: C.ink, width: 2.6 }] }); };
   sl.oninput = upd; upd(); window.addEventListener("resize", upd);
 }
+/* ARIMA, worked example: AR(6) fitted on rain cell 1 (scripts/03_rain_forecast.py; coefficients from statsmodels, 2024-2025 training hours) */
+const AR6 = { mu: 0.14, phi: [0.498, 0.048, 0.036, 0.043, -0.004, 0.027] };
+function arimaExample() {
+  const past = [2.0, 1.0, 0.5, 0, 0, 0];                       // r1 = last hour, r2 = the hour before, ... (mm)
+  let lags = past.slice(); const out = [];
+  for (let h = 0; h < 3; h++) {
+    const terms = AR6.phi.map((f, k) => f * (lags[k] - AR6.mu)), next = Math.max(0, AR6.mu + terms.reduce((a, b) => a + b, 0));
+    out.push({ lags: lags.slice(), terms, next }); lags = [next, ...lags.slice(0, 5)];
+  }
+  const f = v => v.toFixed(2);
+  $("t-arima").innerHTML = `<tr><th></th>${AR6.phi.map((_, k) => `<th class="n">r<sub>${k + 1}</sub></th>`).join("")}<th class="n">Forecast</th></tr>` +
+    `<tr class="sub"><td>Weight φ</td>${AR6.phi.map(v => `<td class="n">${v.toFixed(3)}</td>`).join("")}<td></td></tr>` +
+    out.map((o, h) => `<tr><td>Hour ${h + 1}: inputs (mm)</td>${o.lags.map((v, k) => `<td class="n">${f(v)}${h && k === 0 ? "*" : ""}</td>`).join("")}<td class="n"><b>${f(o.next)} mm</b></td></tr>`).join("");
+  const t = out[0].terms;
+  $("arima-say").innerHTML = `Hour 1: ${AR6.mu} + ${t.map((v, k) => `${AR6.phi[k]}×(${f(out[0].lags[k])} − ${AR6.mu})`).slice(0, 2).join(" + ")} + … = <b>${f(out[0].next)} mm</b>. ` +
+    `Rain of 2 mm in the last hour leads to about ${f(out[0].next)} mm next hour, then ${f(out[1].next)} and ${f(out[2].next)}: it fades towards the average. * = a forecast fed back in as an input.`;
+}
+
+function introSetup() {                                          // the "How to read this page" guide: shown until dismissed
+  const box = $("intro"), seen = () => { try { return localStorage.getItem("fw-intro") === "1"; } catch (e) { return false; } };
+  box.hidden = seen();
+  $("intro-close").onclick = () => { box.hidden = true; try { localStorage.setItem("fw-intro", "1"); } catch (e) {} };
+  $("intro-open").onclick = () => { box.hidden = false; box.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const sm = $("scores-more"); if (sm) sm.addEventListener("toggle", () => { if (sm.open) r2Demo(); });   // chart needs its width
+}
 async function init() {
+  introSetup();
   try {
     [INDEX, ROADS] = await Promise.all([getJSON("index.json"), getJSON("roads.json")]);
     try { WX = await getJSON("weather.json"); } catch (e) { WX = null; }
@@ -764,17 +797,19 @@ async function init() {
     const segSync = () => $("h-seg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.h === horizon));
     $("h-seg").querySelectorAll("button").forEach(b => b.onclick = () => { horizon = ahead = b.dataset.h; $("ahead").value = ahead; segSync(); lastSlot = -1; setTime(T); }); segSync();
     document.querySelectorAll("#ahead-seg button").forEach(b => b.onclick = () => { $("ahead").value = b.dataset.a; $("ahead").dispatchEvent(new Event("change")); });
-    table("t-rec", ["Model", "5 min", "20 min", "40 min"], [["Persistence (baseline)", "0.93", "0.44", "-0.10"], ["LSTM, all at once", "0.94", "0.52", "0.11"], ["Recursive ANN-LSTM", "0.95", "0.49", "-0.25"], ["Recursive XGBoost-LSTM", "0.95", "0.52", "-0.02"], ["Recursive + perfect rain (upper bound)", "0.95", "0.56", "0.10"]]);
     r2Demo();
-    $("model-toggles").innerHTML = models.map(m => `<label><input type="checkbox" data-m="${esc(m)}" ${modelsOn.has(m) ? "checked" : ""}><i style="background:${STYLE[m][0]}"></i>${esc(nice(m))}</label>`).join("");
-    $("model-toggles").querySelectorAll("input").forEach(c => c.onchange = () => { c.checked ? modelsOn.add(c.dataset.m) : modelsOn.delete(c.dataset.m); drawDepth(); });
     const R = INDEX.results, keepD = new Set(["Persistence", "XGBoost (no future rain)", "LSTM (standard)", ...MINE, "LSTM + perfect rain forecast", "CNN-LSTM + perfect rain forecast"]);
     const dRows = R.depth.filter(r => keepD.has(r[0])).sort((a, b) => [...keepD].indexOf(a[0]) - [...keepD].indexOf(b[0]));
     table("t-depth", ["Model", "R² 5 min", "R² 20 min", "R² 40 min", "Caught early"], dRows.map(r => [nice(r[0]), r[1].toFixed(2), r[2].toFixed(2), r[3].toFixed(2), r[7] + "%"]), 2, false, dRows.map(r => r[0]));
     table("t-road", ["Model", "Top 1%", "Top 5%"], R.road.map(r => [r[0], r[1] + "%", r[2] + "%"]), 1);
+    if (R.rain) table("t-rainfc", ["Model", "RMSE 1 h", "2 h", "3 h", "R² 1 h", "2 h", "3 h"], R.rain.map(r => [r[0], ...r.slice(1, 4).map(v => v.toFixed(2)), ...r.slice(4, 7).map(v => v.toFixed(2))]), 1, true);
+    arimaExample();
     await setMode(want === "live" ? "live" : "past");                         // opens on a past storm; #live opens the live view
     setInterval(() => { if (MODE === "live") loadLive(); }, 60000);
     let rz = 0; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => setMode(MODE), 250); });
+    window.addEventListener("themechange", async () => {            // redraw every chart in the new colours, at the same moment
+      palette(); const t = T, was = MODE; await setMode(was); if (was === "past") setTime(t); r2Demo();
+    });
   } catch (e) {
     $("app").innerHTML = `<div class="err"><b>The dashboard data did not load.</b><br>Start it from the project folder with <code>python3 backend/app.py</code> and open http://localhost:8000. (${esc(e.message)})</div>`;
   }

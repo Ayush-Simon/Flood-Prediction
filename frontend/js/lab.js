@@ -3,9 +3,15 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const COL = { live: "#7357c9", lstm_improved: "#2a7fd4", lstm_features: "#c2185b", ann_lstm: "#e08a00", cnn_lstm: "#d0362a", persist: "#8c8c8c", depth: "#333333", rain: "rgba(42,127,212,.45)", soft: "#6e6e6e", line: "rgba(0,0,0,.09)" };   // light page (classic theme)
+function palette() {                                     // colours that depend on light / dark mode (js/theme.js)
+  const d = window.Theme && Theme.dark();
+  Object.assign(COL, d ? { depth:"#e8e8e8", soft:"#a8a8a8", line:"rgba(255,255,255,.1)", lstm_features:"#ec5a96", shade:"rgba(255,255,255,.07)", shadeEdge:"rgba(255,255,255,.35)", mark:"rgba(255,255,255,.5)", zero:"rgba(255,255,255,.5)", diag:"rgba(255,255,255,.55)" }
+                       : { depth:"#333333", soft:"#6e6e6e", line:"rgba(0,0,0,.09)", lstm_features:"#c2185b", shade:"rgba(0,0,0,0.07)", shadeEdge:"rgba(0,0,0,0.35)", mark:"rgba(0,0,0,0.45)", zero:"rgba(0,0,0,0.5)", diag:"rgba(0,0,0,0.55)" });
+}
+palette();
 const NAME = { live: "Main model", lstm_improved: "Improved LSTM", lstm_features: "Feature-enhanced LSTM", ann_lstm: "ANN-LSTM", cnn_lstm: "CNN-LSTM", persist: "Persistence (baseline)" };
 const BODY = getComputedStyle(document.documentElement).getPropertyValue("--body");
-const M = {}; let SAMPLES = [], choice = "live", ahead = 3, RES = null, STEP = 11, PLAY = null;
+const M = {}; let SAMPLES = [], choice = "lstm_features", ahead = 3, RES = null, STEP = 11, PLAY = null;
 const fmt = v => v == null || isNaN(v) ? "–" : v.toFixed(1) + " in";
 
 /* ------------------------------------------------------------ chart: lines on the left axis, rain bars on the right */
@@ -24,9 +30,9 @@ function chart(cv, o) {
   g.textAlign = "center";   // about one label per 52 px, kept inside the canvas
   const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - L - R) / 52))));
   for (let i = 0; i < n; i += step) { const s = o.label(i), w = g.measureText(s).width; g.fillText(s, Math.min(Math.max(X(i), w / 2 + 1), W - w / 2 - 1), H - 8); }
-  if (o.shade) { g.fillStyle = "rgba(0,0,0,0.07)"; g.fillRect(X(o.shade[0]), T, X(o.shade[1]) - X(o.shade[0]), H - T - B);
-    g.strokeStyle = "rgba(0,0,0,0.35)"; g.strokeRect(X(o.shade[0]) + .5, T + .5, X(o.shade[1]) - X(o.shade[0]), H - T - B); }
-  if (o.mark != null) { g.strokeStyle = "rgba(0,0,0,0.45)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
+  if (o.shade) { g.fillStyle = COL.shade; g.fillRect(X(o.shade[0]), T, X(o.shade[1]) - X(o.shade[0]), H - T - B);
+    g.strokeStyle = COL.shadeEdge; g.strokeRect(X(o.shade[0]) + .5, T + .5, X(o.shade[1]) - X(o.shade[0]), H - T - B); }
+  if (o.mark != null) { g.strokeStyle = COL.mark; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(o.mark), T); g.lineTo(X(o.mark), H - B); g.stroke(); g.setLineDash([]); }
   if (o.bars) { g.fillStyle = COL.rain; const bw = Math.max(1, (W - L - R) / n - 1); o.bars.forEach((v, i) => { if (v) g.fillRect(X(i) - bw / 2, YB(v), bw, YB(0) - YB(v)); }); }
   for (const s of o.lines) {
     g.strokeStyle = s.color; g.lineWidth = s.width || 2; g.setLineDash(s.dash || []); g.beginPath(); let pen = false;
@@ -44,7 +50,7 @@ function bars(cv, o) {
   const Y = v => T + (H - T - B) * (mx - v) / (mx - mn || 1), gw = (W - L - R) / n, bw = Math.min(26, gw * 0.8 / k);
   g.font = "11px " + BODY;
   for (let i = 0; i <= 4; i++) { const v = mn + (mx - mn) * i / 4, y = Y(v); g.strokeStyle = COL.line; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText(v.toFixed(Math.abs(mx - mn) < 3 ? 2 : 1), L - 6, y + 4); }
-  if (mn < 0) { g.strokeStyle = "rgba(0,0,0,0.5)"; g.beginPath(); g.moveTo(L, Y(0)); g.lineTo(W - R, Y(0)); g.stroke(); }
+  if (mn < 0) { g.strokeStyle = COL.zero; g.beginPath(); g.moveTo(L, Y(0)); g.lineTo(W - R, Y(0)); g.stroke(); }
   o.labels.forEach((lab, i) => {
     const cx = L + gw * (i + 0.5); g.fillStyle = COL.soft; g.textAlign = "center";
     const short = gw < g.measureText(lab).width + 8 ? lab.replace(" min", "") : lab;   // "5 min" becomes "5" when bars are narrow
@@ -62,7 +68,7 @@ function scatter(cv, o) {
   g.font = "11px " + BODY;
   for (let i = 0; i <= 4; i++) { const v = mx * i / 4; g.strokeStyle = COL.line; g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(W - R, Y(v)); g.stroke(); g.fillStyle = COL.soft; g.textAlign = "right"; g.fillText(v.toFixed(0), L - 6, Y(v) + 4); g.textAlign = "center"; g.fillText(v.toFixed(0), X(v), H - 14); }
   g.fillText("measured depth (in)", L + (W - L - R) / 2, H - 1); g.textAlign = "left"; g.fillText("forecast (in)", 4, 10);
-  g.strokeStyle = "rgba(0,0,0,0.55)"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(mx), Y(mx)); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = COL.diag; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(mx), Y(mx)); g.stroke(); g.setLineDash([]);
   for (const s of o.series) { g.fillStyle = s.color; g.globalAlpha = 0.75; for (const [a, p] of s.pts) { g.beginPath(); g.arc(X(a), Y(p), 3.2, 0, 7); g.fill(); } g.globalAlpha = 1; }
 }
 const keys = (el, items) => $(el).innerHTML = items.map(([c, l, dash]) => `<span><i style="background:${c}${dash ? ";opacity:.7" : ""}"></i>${esc(l)}</span>`).join("");
@@ -357,7 +363,7 @@ const USE = c => c === "all" ? ["live", "ann_lstm", "cnn_lstm"] : c === "fe" ? [
 const ABOUT = {
   lstm_improved: ["From the extensions notebook. Reads the last 75 minutes of past rain and water depth, forecasts 5 minutes ahead with the notebook's rainfall ANN, and repeats 8 times, feeding its own forecast back in.",
                   "<span>rain + depth, 75 min</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM, 1 step</span><i>↻ ×8</i><span>depth +5…+40 min</span>"],
-  lstm_features: ["The same LSTM, plus features made from the rain: intensity (mm per hour), the rain totals over the last 15, 30 and 60 minutes, and the change in rain since the step before.",
+  lstm_features: ["From the extensions notebook. Reads the last 75 minutes of past rain and water depth plus five features made from the rain: intensity (mm per hour), the rain totals over the last 15, 30 and 60 minutes, and the change in rain since the step before. It forecasts 5 minutes ahead with the notebook's rainfall ANN and repeats 8 times, feeding its own forecast back in.",
                   "<span>rain + depth + 5 rain features</span><i>→</i><span>ANN rain forecast</span><i>→</i><span>LSTM, 1 step</span><i>↻ ×8</i><span>depth +5…+40 min</span>"],
   live: ["The model the live site runs. The ANN forecasts the next 40 minutes of rain from the last hour; convolution filters pick out short patterns in the hour of depth and rain; the LSTM reads them, adds the rain forecast, and predicts the depth.",
          "<span>last hour</span><i>→</i><span>ANN rain forecast</span><i>+</i><span>CNN filters</span><i>→</i><span>LSTM</span><i>→</i><span>depth +5…+40 min</span>"],
@@ -463,9 +469,10 @@ async function init() {
   $("model-seg").querySelectorAll("button").forEach(b => b.onclick = () => { choice = b.dataset.m; $("model-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); info(); if (RES) waiting("Model changed. Press “Run the forecast” to calculate again."); });
   $("ahead-seg").querySelectorAll("button").forEach(b => b.onclick = () => { ahead = +b.dataset.h; $("ahead-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); if (RES) show(false); });
   info();
-  for (const m of ["live", "ann_lstm", "cnn_lstm", "lstm_improved", "lstm_features"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });
+  for (const m of ["lstm_features", "ann_lstm", "lstm_improved"]) get("api/model/" + m).then(j => { M[m] = j; info(); }).catch(() => { $("status").textContent = "The models are not in the data store yet: run python3 backend/build_store.py."; });
   if (window.Sky) Sky.set({ storm: 0.45, rain: 0, thunder: 0 });
   let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => RES && show(false), 250); });
+  addEventListener("themechange", () => { palette(); info(); if (RES) show(false); });
 }
 let toastTimer;
 function toast(title, text, bad) {
