@@ -19,6 +19,7 @@ The study city changed from Bhubaneswar to New York because no public, timestamp
 | **LSTM (standard)** | **0.94** | **0.52** | **0.11** | 0% |
 | ANN-LSTM | 0.93 | 0.49 | 0.05 | 3% |
 | CNN-LSTM | 0.93 | 0.48 | −0.01 | 1% |
+| CNN-LSTM + ANN rain (live model, average of 3 runs) | 0.90 | 0.47 | 0.07 | 3% |
 | LSTM + perfect rain forecast (upper bound) | 0.94 | 0.53 | 0.19 | 33% |
 
 The standard LSTM has the lowest error of the neural models (significantly better than ANN-LSTM and CNN-LSTM, p ≤ 0.01), but a three-parameter physical bucket model is just as accurate (p = 0.56). Counting false alarms, warnings catch about a third of floods 10–15 minutes ahead at about four false alarms per real flood. Checked against measured sensor water, the street model barely beats rain alone and over-ranks complaint-heavy areas. Early warning
@@ -114,12 +115,20 @@ Build the static site locally: `python3 backend/build_static.py` (add `--update`
 | `07e_recursive_and_future_work.py` | The paper's recursive ANN-LSTM and future-work experiments |
 | `10a`, `10b`, `10c` | Confidence intervals, significance tests, gauge distance, honest warning scores, physics (bucket) baseline |
 | `10d_street_model_vs_water.py` | Street model checked against measured sensor water; complaint bias |
+| `13a_export_lab_models.py` | Models for the Model Lab (run in the browser) |
+| `14a`–`14d` | Perfect-rain (oracle) experiment, per-flood warnings, 311 exposure correction |
+| `15a_notebook_extensions_nyc.py` | Improved LSTM vs Feature-enhanced LSTM, accuracy by rainfall condition, risk levels |
+| `16a_rain_now_past.py` | Main model's 5/15/30/40-minute forecasts on past storms ("Raining now") |
+| `16b_feature_lstm_export.py` | Improved / Feature-enhanced LSTM for the website and Model Lab |
+| `17a_ensemble_live_model.py` | Live model as the average of 3 training runs (matches the reported R² 0.90 at 5 min) |
+| `17b_floodnet_live_depth.py` | Current sensor depths from FloodNet (api.fieldkit.org, project 174) for live forecasts |
+| `17c_tree_model_tuning.py` | XGBoost, LightGBM and Random Forest tuned with time-based cross-validation |
 
 ## Data sources (all free and public)
 
 | Data | Source |
 | --- | --- |
-| Street flood depth | FloodNet NYC on NYC Open Data (datasets `aq7i-eu5q`, `kb2e-tjy3`) |
+| Street flood depth | FloodNet NYC on NYC Open Data (datasets `aq7i-eu5q`, `kb2e-tjy3`); live readings from the FloodNet dashboard data (api.fieldkit.org) |
 | 1-minute rain | NOAA airport gauges (Central Park, LaGuardia, JFK) via Iowa Environmental Mesonet |
 | Hourly rain, live weather | Open-Meteo |
 | Streets, storm drains, stormwater flood maps, 311 reports | NYC Open Data (`inkn-q76z`, `2w2g-fk3i`, `9i7c-xyvv`, `erm2-nwe9`) |
@@ -130,5 +139,5 @@ Large raw and intermediate files (over about 20 MB) are not in the repository; t
 ## Limitations
 
 Tested on four months of storms; airport gauges are 4–25 km from most sensors; the road model learns from
-311 reports, not measured water; live mode has no live sensor depths and has not been validated on real
-storms. This is a student research prototype, not an official warning service.
+311 reports, not measured water; live forecasts start from FloodNet's current readings when its public data
+(api.fieldkit.org) answers, and from a dry street otherwise; live mode has not been validated on real storms. This is a student research prototype, not an official warning service.

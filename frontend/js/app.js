@@ -425,7 +425,7 @@ function play() { if (playing) { playing = false; $("play").textContent = "▶";
    each with how far it was off on the July-October 2026 test storms (typical miss = RMSE, flood-related windows).
    TRUST is measured on this exact model file by scripts/16a_rain_now_past.py (7,028 flood-related test windows). */
 const NOW_STEPS = [[0, 5], [2, 15], [5, 30], [7, 40]];
-const TRUST = { 5: [1.2, 0.80], 15: [1.8, 0.53], 30: [2.3, 0.21], 40: [2.5, 0.08] };
+const TRUST = { 5: [0.8, 0.90], 15: [1.6, 0.63], 30: [2.3, 0.22], 40: [2.5, 0.07] };   // 3-run ensemble (scripts/17a)
 function trustTable(el) {
   table(el, ["How far to trust it", "", ...NOW_STEPS.map(([, m]) => `${m} min`)],
     [["Typical miss on 2026 test storms", "", ...NOW_STEPS.map(([, m]) => "± " + TRUST[m][0].toFixed(1) + " in")],
@@ -475,7 +475,7 @@ function rainPast(p) {
   $("rp-say").textContent = !top ? (raining ? "It is raining, but the model expects no water at any sensor in the next 40 minutes." : "No water now and none expected in the next 40 minutes.")
     : `Deepest at ${shortName(top.name)}: now ${fmtIn(top.obs[p])}; forecast ${RP_MIN.map(m => `${fmtIn(at(top, m))} in ${m} min`).join(", ")}. It really measured ${RP_MIN.map(m => fmtIn(real(top, m))).join(", ")}.`;
   fePast(p, list);
-  $("rp-note").textContent = `Forecast made at ${slotLabel(p)} from the last hour of water depth and rain at each sensor's nearest gauge, nothing later. Big number: the forecast. “Really”: what the sensor measured then. ${live.length} sensors had the model running at this moment; sensors that stayed dry are left out of the list. Times are New York time.`;
+  $("rp-note").textContent = `The main model is the average of three training runs of the ANN rain forecast feeding a CNN-LSTM, as scored in the project report. Forecast made at ${slotLabel(p)} from the last hour of water depth and rain at each sensor's nearest gauge, nothing later. Big number: the forecast. “Really”: what the sensor measured then. ${live.length} sensors had the model running at this moment; sensors that stayed dry are left out of the list. Times are New York time.`;
 }
 function rainNow(L, raining) {
   const sens = L.sensors.filter(s => s.fc), w = L.weather || {};
@@ -494,7 +494,7 @@ function rainNow(L, raining) {
   $("rainnow-title").textContent = raining ? `It is raining now: flood depth in 5, 15, 30 and 40 minutes` : `Not raining now: flood depth in 5, 15, 30 and 40 minutes`;
   $("rainnow-say").textContent = !anyWater ? (raining ? `It is raining (${w.rain_now ?? 0} mm in the last 15 minutes), but not hard enough for any sensor to get water in the next 40 minutes.` : "No sensor is forecast to get water in the next 40 minutes.")
     : `${raining ? `It is raining (${w.rain_now ?? 0} mm in the last 15 minutes). ` : ""}The deepest water is expected at ${shortName(deepS.name)}: ${fmtIn(deepS.fc[0])} in 5 minutes, ${fmtIn(deep15)} in 15, ${fmtIn(deepS.fc[5])} in 30 and ${fmtIn(deepS.fc[7])} in 40.`;
-  $("rainnow-note").textContent = (L.depth_connected ? "" : "Live sensor depths are not connected, so each forecast starts from a dry street: where water is already standing, real depths will be higher. ")
+  $("rainnow-note").textContent = (L.depth_connected ? `Current depths: live FloodNet readings from ${L.depth_sensors || "the"} sensors${L.depth_source ? " (" + L.depth_source + ")" : ""}; forecasts start from the water measured in the last hour. ` : "Live sensor depths are not connected, so each forecast starts from a dry street: where water is already standing, real depths will be higher. ")
     + `Forecast made ${L.now_local} by the ANN rain forecast and CNN-LSTM. The further ahead, the less exact: by 40 minutes the depth is a rough guide, so use “Highest in 40 min” in Today’s prediction for planning.`;
 }
 
@@ -802,6 +802,7 @@ async function init() {
     const dRows = R.depth.filter(r => keepD.has(r[0])).sort((a, b) => [...keepD].indexOf(a[0]) - [...keepD].indexOf(b[0]));
     table("t-depth", ["Model", "R² 5 min", "R² 20 min", "R² 40 min", "Caught early"], dRows.map(r => [nice(r[0]), r[1].toFixed(2), r[2].toFixed(2), r[3].toFixed(2), r[7] + "%"]), 2, false, dRows.map(r => r[0]));
     table("t-road", ["Model", "Top 1%", "Top 5%"], R.road.map(r => [r[0], r[1] + "%", r[2] + "%"]), 1);
+    table("t-rec", ["Model", "5 min", "20 min", "40 min"], [["Persistence (baseline)", "0.93", "0.44", "-0.10"], ["LSTM, all at once (direct)", "0.94", "0.52", "0.11"], ["Recursive ANN-LSTM (the paper’s design)", "0.95", "0.49", "-0.25"], ["Recursive XGBoost-LSTM", "0.95", "0.52", "-0.02"], ["Recursive + perfect rain (upper bound)", "0.95", "0.56", "0.10"]]);
     if (R.rain) table("t-rainfc", ["Model", "RMSE 1 h", "2 h", "3 h", "R² 1 h", "2 h", "3 h"], R.rain.map(r => [r[0], ...r.slice(1, 4).map(v => v.toFixed(2)), ...r.slice(4, 7).map(v => v.toFixed(2))]), 1, true);
     arimaExample();
     await setMode(want === "live" ? "live" : "past");                         // opens on a past storm; #live opens the live view

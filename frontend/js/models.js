@@ -32,8 +32,14 @@ const FloodModels = (() => {
   }
 
   /* window: 12 rows of [depth, rain, missing]; time: Date of the last row (UTC) */
-  function predict(M, window, time) {
-    const w = M.weights;
+  function predict(M, window, time) {                               // "members": several trained runs, averaged (scripts/17a)
+    if (M.members && M.members.length > 1) {
+      const runs = M.members.map(w => one(M, w, window, time));
+      return { depth: runs[0].depth.map((_, k) => runs.reduce((a, r) => a + r.depth[k], 0) / runs.length), rain: runs[0].rain };
+    }
+    return one(M, M.weights, window, time);
+  }
+  function one(M, w, window, time) {
     let s = window.map(r => r.map((v, i) => (v - M.seq_mean[i]) / M.seq_std[i]));           // time x 3
     if (M.cnn) {
       let x = [0, 1, 2].map(i => s.map(r => r[i]));                                          // channels x time

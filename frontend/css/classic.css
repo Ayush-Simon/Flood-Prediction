@@ -275,3 +275,13 @@ html[data-theme="dark"] .search-actions .go { background:linear-gradient(var(--b
 .arima-eq { font-family:Georgia, "Times New Roman", serif; font-size:16px; margin:10px 0 12px; padding:10px 12px; background:var(--c-panel2); border:1px solid var(--c-border); border-radius:var(--r-sm); color:var(--c-strong); overflow-x:auto; white-space:nowrap; }
 .arima-steps { padding-left:18px; margin:0; display:grid; gap:6px; }
 #t-arima td, #t-arima th { padding-left:6px; padding-right:6px; }
+table.papers td { vertical-align:top; font-size:13.5px; line-height:1.45; }
+table.papers td small { display:block; color:var(--c-faint); font-size:12px; margin-top:2px; }
+table.papers th:nth-child(1) { width:20%; } table.papers th:nth-child(4) { width:12%; }
+.st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; white-space:nowrap; }
+.st.ok { background:#e3f3ea; color:#1f6b45; } .st.part { background:#fdf1dc; color:#8a5a00; }
+html[data-theme="dark"] .st.ok { background:#1d3a2b; color:#6fdca1; } html[data-theme="dark"] .st.part { background:#3d2f12; color:#f0b85a; }
+ul.plainlist { margin:8px 0 0; padding-left:18px; display:grid; gap:7px; font-size:13.5px; color:var(--c-ink); }
+.grid2 > * { min-width:0; }
+@media (max-width:760px) { .model-card .flow { flex-wrap:wrap; } .model-card .flow .st { min-width:0; flex:1 1 120px; } }
+.flow .st span { display:block; white-space:normal; overflow-wrap:anywhere; }

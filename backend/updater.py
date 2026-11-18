@@ -5,8 +5,8 @@ Runs inside backend/app.py every 15 minutes. What it does:
   - Rain measured in the last hours: airport gauges (Central Park, LaGuardia, JFK) via Iowa Environmental Mesonet
   - Road model (XGBoost): flood risk of every street for the next 24 h of forecast rain
   - Depth model (ANN rain forecaster + CNN-LSTM): water depth 5-40 min ahead at each FloodNet sensor
-    Live sensor depths are not connected, so the model starts from "street dry now" unless
-    backend/store/sensor_depth_now.json gives current depths ({"Sensor ID": inches, ...}).
+    Current depths come from backend/store/sensor_depth_now.json, written by scripts/17b_floodnet_live_depth.py
+    (FloodNet's public data). Without that file (or if it is over 45 minutes old) the model starts from "street dry now".
 Needs: pandas, numpy, xgboost, requests."""
 import io, json, os, time
 from datetime import datetime, timezone
@@ -157,9 +157,18 @@ def build():
     flag = np.where(lvl > 0)[0]; flag = flag[np.argsort(-p[flag])]
 
     # ---------- depth model at each sensor ----------
-    depth_now = {}
+    depth_now, depth_hour, depth_src = {}, {}, None       # written by scripts/17b_floodnet_live_depth.py (FloodNet live readings)
     fp = f"{store.DIR}/sensor_depth_now.json"
-    if os.path.exists(fp): depth_now = json.load(open(fp))
+    try:                                                  # fetch FloodNet's current readings (fails quietly if it cannot)
+        import subprocess, sys as _sys
+        subprocess.run([_sys.executable, os.path.join(ROOT, "scripts", "17b_floodnet_live_depth.py"), "--out", fp], timeout=120, check=False)
+    except Exception as e: print("FloodNet depth fetch skipped:", type(e).__name__)
+    if os.path.exists(fp):
+        dj = json.load(open(fp))
+        if "depth_now" in dj:                             # current format; ignore a file older than 45 minutes
+            age = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(dj.get("updated", "1970-01-01").replace(" UTC", ""), tz="UTC")).total_seconds()
+            if age <= 45 * 60: depth_now, depth_hour, depth_src = dj["depth_now"], dj.get("last_hour", {}), dj.get("source")
+        else: depth_now = dj                              # older format: {"Sensor ID": inches}
     sens, seqs = [], []
     t_utc = pd.Timestamp.now(tz="UTC").tz_localize(None).floor("5min")
     for sid, cl in sensor_cell.items():
@@ -171,7 +180,9 @@ def build():
         else:
             hist = np.full(12, lasth[cl] / 12)                # no 15-min data: spread the last hour evenly
         d0 = float(depth_now.get(sid, 0.0))
-        seqs.append(np.column_stack([np.full(12, d0), hist, np.zeros(12)]))
+        dh = depth_hour.get(sid)
+        dep = np.asarray(dh, dtype=float) if dh and len(dh) == 12 else np.full(12, d0)   # the measured last hour when available
+        seqs.append(np.column_stack([dep, hist, np.zeros(12)]))
         sens.append({"id": sid, "name": str(sensors.loc[sid, "Sensor Name"]), "x": int(round((sensors.loc[sid, "Longitude"] - LON0) * Q)),
                      "y": int(round((sensors.loc[sid, "Latitude"] - LAT0) * Q)), "now": d0 if sid in depth_now else None, "observed": True})
     fc, rfc = depth_model.predict(np.asarray(seqs), np.full(len(seqs), t_utc.to_datetime64()), return_rain=True)
@@ -196,7 +207,7 @@ def build():
         "what_if": bool(what_if), "expected_reports": round(float(p.sum()), 1),
         "counts": [int((lvl == k).sum()) for k in (3, 2, 1)], "risk_ix": flag.tolist(), "risk_p": [int(round(v * 1e4)) for v in p[flag]],
         "boro": {BORO[b]: [int(((st["boro"] == b) & (lvl == k)).sum()) for k in (3, 2, 1)] for b in BORO},
-        "has_reports": False, "reported": [], "sensors": sens, "depth_connected": bool(depth_now),
+        "has_reports": False, "reported": [], "sensors": sens, "depth_connected": bool(depth_now), "depth_source": depth_src, "depth_sensors": len(depth_now),
         "scenarios": scenarios, "storm_shape": "today's forecast" if city_total >= 1 else "a typical NYC storm",
         "model_run": {"road_streets": int(len(p)), "depth_sensors": len(sens), "seconds": round(time.time() - t0, 1)},
     }
